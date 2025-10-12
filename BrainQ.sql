@@ -1,6 +1,6 @@
 -- BrainQ DB – MySQL 9.x compatible
 DROP DATABASE IF EXISTS brainq_db;
-CREATE DATABASE brainq_db 
+CREATE DATABASE brainq_db;
 USE brainq_db;
 
 
@@ -11,7 +11,7 @@ CREATE TABLE users (
   user_id       BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT 'PK',
   email         VARCHAR(255) NOT NULL,
   username      VARCHAR(50)  NOT NULL,
-  password_hash VARCHAR(255) NULL,
+  password_hash VARCHAR(255) NOT NULL,
   role          ENUM('user','admin') NOT NULL DEFAULT 'user',
   is_suspended  TINYINT(1) NOT NULL DEFAULT 0,
   created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
