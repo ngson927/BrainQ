@@ -1,4 +1,4 @@
-# BrainQ Flashcard Learning System Backend
+# BrainQ Flashcard Learning System
 
 
 # Backend
