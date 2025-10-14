@@ -17,7 +17,9 @@ Git
 # Setup
 
 Clone the repository: 
+
 git clone https://github.com/ngson927/BrainQ.git
+
 cd BrainQ
 
 
@@ -35,7 +37,9 @@ Install dependencies: pip install -r requirements.txt
 Configure environment variables: Create a .env file (or update settings.py) with your database credentials and email settings.
 
 Run migrations: 
+
 python manage.py makemigrations
+
 python manage.py migrate
 
 
