@@ -1,25 +1,42 @@
 # Python
-__pycache__/
 *.pyc
+__pycache__/
 *.pyo
+*.pyd
+*.env
+*.sqlite3
 
-# Virtual environment
+# Virtual Environment
 .venv/
 env/
 venv/
 
 # Django
-db.sqlite3
 *.log
+*.pot
+*.pyc
+*.py[cod]
+__pycache__/
+db.sqlite3
 media/
 staticfiles/
 
-# VS Code
+# IDEs
 .vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
 
-# OS files
+# OS Files
 .DS_Store
 Thumbs.db
+
+# Pytest
+.cache/
+
+# Coverage
+htmlcov/
+.coverage
 
 # Python package metadata dirs
 *.dist-info/
