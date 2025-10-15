@@ -18,9 +18,10 @@ class AdminOnlyView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        users = CustomUser.objects.all().values('id', 'username', 'email', 'role')
+        users = CustomUser.objects.all().values(
+            'id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_suspended'
+        )
         return Response({"users": list(users)}, status=status.HTTP_200_OK)
-
 
 User = get_user_model()  # This gets your CustomUser model
 
