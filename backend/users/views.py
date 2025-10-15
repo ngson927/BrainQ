@@ -127,7 +127,7 @@ class ConfirmPasswordResetView(APIView):
 
     def post(self, request):
         token = request.data.get("token")
-        new_password = request.data.get("password")
+        new_password = request.data.get("new_password")
         if not token or not new_password:
             return Response({"error": "Token and new password are required"}, status=status.HTTP_400_BAD_REQUEST)
 
