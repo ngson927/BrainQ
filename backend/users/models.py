@@ -3,21 +3,29 @@ from django.db import models
 from django.utils import timezone
 
 
-class CustomUser(AbstractUser):
-    ROLE_CHOICES = (
-        ('user', 'User'),
-        ('admin', 'Admin'),
-    )
-    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='user')
-    is_suspended = models.BooleanField(default=False)
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 
-    def __str__(self):
-        return self.username
+
+class CustomUser(AbstractBaseUser, PermissionsMixin):
+    id = models.BigAutoField(primary_key=True)
+    username = models.CharField(max_length=50, unique=True)
+    email = models.EmailField(unique=True)
+    password = models.CharField(max_length=255)
+    role = models.CharField(max_length=10, default='user')
+    is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)
+    date_joined = models.DateTimeField(auto_now_add=True)
+    
+    USERNAME_FIELD = 'username'
+    REQUIRED_FIELDS = ['email']
+
+    class Meta:
+        db_table = 'users'
 
 
 
 # users/models.py
-from django.db import models
+
 from django.contrib.auth import get_user_model
 import secrets
 import hashlib
