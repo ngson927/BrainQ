@@ -11,6 +11,8 @@ MySQL (or SQLite for testing)
 
 pip (package manager)
 
+pip install django
+
 Git
 
 
@@ -18,7 +20,9 @@ Git
 
 Clone the repository: 
 
-git clone https://github.com/ngson927/BrainQ.git
+First install Git for your specific computer.
+
+Run this in your terminal or command prompt: git clone https://github.com/ngson927/BrainQ.git
 
 cd BrainQ
 
