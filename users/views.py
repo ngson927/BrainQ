@@ -18,8 +18,11 @@ class AdminOnlyView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
 
     def get(self, request):
-        users = CustomUser.objects.all().values('id', 'username', 'email', 'role')
+        users = CustomUser.objects.all().values(
+            'id', 'username', 'email', 'first_name', 'last_name', 'role', 'is_suspended'
+        )
         return Response({"users": list(users)}, status=status.HTTP_200_OK)
+
 
 
 User = get_user_model()  # This gets your CustomUser model
@@ -88,13 +91,12 @@ class RequestPasswordResetView(APIView):
         try:
             user = CustomUser.objects.get(email=email)
         except CustomUser.DoesNotExist:
-            # Avoid exposing which emails exist
             return Response({"message": "If the email exists, a reset link has been sent."}, status=status.HTTP_200_OK)
 
         # Generate secure token
         raw_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
-        expires_at = timezone.now() + timedelta(minutes=15)  # 15 min expiry
+        expires_at = timezone.now() + timedelta(minutes=15)
 
         # Invalidate previous tokens
         PasswordResetToken.objects.filter(user=user, used_at__isnull=True).update(used_at=timezone.now())
@@ -102,10 +104,15 @@ class RequestPasswordResetView(APIView):
         # Save new token
         PasswordResetToken.objects.create(user=user, token_hash=token_hash, expires_at=expires_at)
 
-        # Create a reset link (for testing, we’ll return it in the response)
+        # Create reset link
         reset_link = f"http://127.0.0.1:8000/reset-password-confirm/?token={raw_token}"
 
-        # Optional: still send email (prints to console if using console backend)
+        # Print to console for development
+        print("Password reset requested for:", email)
+        print("Token:", raw_token)
+        print("Reset link:", reset_link)
+
+        # Optional: still send email (console backend)
         send_mail(
             subject="Password Reset Request",
             message=f"Click the link to reset your password (expires in 15 minutes): {reset_link}",
@@ -114,12 +121,13 @@ class RequestPasswordResetView(APIView):
             fail_silently=False
         )
 
-        # Return token & link directly for testing
+        # Return token & link directly for Postman/Flutter
         return Response({
             "message": "Password reset token created successfully",
             "reset_link": reset_link,
-            "token": raw_token  # <-- use this directly in Postman to reset password
+            "token": raw_token
         }, status=status.HTTP_200_OK)
+
 
 
 class ConfirmPasswordResetView(APIView):
@@ -127,7 +135,7 @@ class ConfirmPasswordResetView(APIView):
 
     def post(self, request):
         token = request.data.get("token")
-        new_password = request.data.get("password")
+        new_password = request.data.get("new_password")
         if not token or not new_password:
             return Response({"error": "Token and new password are required"}, status=status.HTTP_400_BAD_REQUEST)
 
