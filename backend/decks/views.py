@@ -81,6 +81,178 @@ class DeckListView(APIView):
 
 
 # -------------------------
+# Quiz Session API
+# -------------------------
+from .models import QuizSession, QuizSessionFlashcard
+from .serializers import QuizSessionSerializer, QuizSessionFlashcardSerializer
+from django.utils import timezone
+
+class StartQuizSessionView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, deck_id):
+        mode = request.data.get('mode')
+        if mode not in ['random', 'sequential']:
+            return Response({'detail': 'Invalid mode.'}, status=400)
+        deck = get_object_or_404(Deck, pk=deck_id)
+        if deck.owner != request.user and not deck.is_public:
+            return Response({'detail': 'Not authorized.'}, status=403)
+        session = QuizSession.objects.create(user=request.user, deck=deck, mode=mode)
+        session.initialize_order()
+        for fid in session.order:
+            QuizSessionFlashcard.objects.create(session=session, flashcard_id=fid)
+        serializer = QuizSessionSerializer(session)
+        # Get the first flashcard's question
+        question = None
+        if session.order:
+            first_flashcard = Flashcard.objects.get(id=session.order[0])
+            question = first_flashcard.question
+        return Response({
+            'session': serializer.data,
+            'question': question
+        }, status=201)
+
+class QuizSessionAnswerView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        if session.finished_at:
+            return Response({'detail': 'Session already finished.'}, status=400)
+        flashcard_id = session.get_current_flashcard_id()
+        if flashcard_id is None:
+            return Response({'detail': 'No more flashcards.'}, status=400)
+        answer = request.data.get('answer', '').strip()
+        attempt = get_object_or_404(QuizSessionFlashcard, session=session, flashcard_id=flashcard_id)
+        # Always allow answering, even if previously answered
+        correct = (answer.lower() == attempt.flashcard.answer.lower())
+        attempt.answered = True
+        attempt.correct = correct
+        attempt.answer_given = answer
+        attempt.answered_at = timezone.now()
+        attempt.save()
+        session.total_answered += 1
+        if correct:
+            session.correct_count += 1
+        session.increment_index()
+        session.save()
+        feedback = 'Correct!' if correct else f'Incorrect. Correct answer: {attempt.flashcard.answer}'
+        # Get the next flashcard's question
+        next_question = None
+        next_flashcard_id = session.get_current_flashcard_id()
+        if next_flashcard_id is not None:
+            next_flashcard = Flashcard.objects.get(id=next_flashcard_id)
+            next_question = next_flashcard.question
+        return Response({
+            'correct': correct,
+            'feedback': feedback,
+            'accuracy': session.accuracy(),
+            'next_question': next_question
+        })
+
+class PauseQuizSessionView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        session.is_paused = True
+        session.save()
+        return Response({'detail': 'Session paused.'})
+
+class ResumeQuizSessionView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        session.is_paused = False
+        session.save()
+        # Return the current flashcard's question
+        question = None
+        flashcard_id = session.get_current_flashcard_id()
+        if flashcard_id is not None:
+            flashcard = Flashcard.objects.get(id=flashcard_id)
+            question = flashcard.question
+        return Response({'detail': 'Session resumed.', 'question': question})
+
+class SkipQuizFlashcardView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        if session.finished_at:
+            return Response({'detail': 'Session finished.'}, status=400)
+        flashcard_id = session.get_current_flashcard_id()
+        if flashcard_id is None:
+            return Response({'detail': 'No more flashcards.'}, status=400)
+        attempt = get_object_or_404(QuizSessionFlashcard, session=session, flashcard_id=flashcard_id)
+        # Always allow skipping, even if previously answered
+        attempt.answered = True
+        attempt.correct = False
+        attempt.answer_given = ''
+        attempt.answered_at = timezone.now()
+        attempt.save()
+        session.total_answered += 1
+        session.increment_index()
+        session.save()
+        # Return the next flashcard's question
+        next_question = None
+        next_flashcard_id = session.get_current_flashcard_id()
+        if next_flashcard_id is not None:
+            next_flashcard = Flashcard.objects.get(id=next_flashcard_id)
+            next_question = next_flashcard.question
+        return Response({'detail': 'Flashcard skipped.', 'next_question': next_question})
+
+class ChangeQuizModeView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        new_mode = request.data.get('mode')
+        if new_mode not in ['random', 'sequential']:
+            return Response({'detail': 'Invalid mode.'}, status=400)
+        session.mode = new_mode
+        session.initialize_order()
+        session.save()
+        # Return the current flashcard's question after mode change
+        question = None
+        flashcard_id = session.get_current_flashcard_id()
+        if flashcard_id is not None:
+            flashcard = Flashcard.objects.get(id=flashcard_id)
+            question = flashcard.question
+        return Response({'detail': f'Mode changed to {new_mode}.', 'question': question})
+
+class FinishQuizSessionView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        session.finished_at = timezone.now()
+        session.save()
+        return Response({'detail': 'Session finished.'})
+
+class QuizSessionResultsView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, session_id):
+        session = get_object_or_404(QuizSession, pk=session_id, user=request.user)
+        serializer = QuizSessionSerializer(session)
+        return Response({
+            'correct_count': session.correct_count,
+            'total_answered': session.total_answered,
+            'accuracy': session.accuracy(),
+            'results': serializer.data
+        })
+
+
+# -------------------------
 # Create a Flashcard
 # -------------------------
 class CreateFlashcardView(APIView):
