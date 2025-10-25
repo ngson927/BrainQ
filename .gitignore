@@ -1,26 +1,53 @@
-# Python
+# =====================
+# Python / Django Backend
+# =====================
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
-*.pyo
+*.py[cod]
+*$py.class
 
-# Virtual environment
+# Virtual environments
 .venv/
-env/
 venv/
+env/
 
-# Django
+# Django / Database
 db.sqlite3
 *.log
 media/
 staticfiles/
 
-# VS Code
-.vscode/
+# Python package metadata
+*.dist-info/
+*.egg-info/
 
-# OS files
+# =====================
+# Environment & Secrets
+# =====================
+.env
+.env.*
+!.env.example
+
+# =====================
+# IDE & OS Files
+# =====================
+.vscode/
 .DS_Store
 Thumbs.db
 
-# Python package metadata dirs
-*.dist-info/
-*.egg-info/
+# =====================
+# Logs & Reports
+# =====================
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# =====================
+# Miscellaneous
+# =====================
+coverage/
+.cache/
