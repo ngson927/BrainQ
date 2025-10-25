@@ -131,3 +131,27 @@ class FlashcardListView(APIView):
             {"detail": "Not authorized to view flashcards for this deck."},
             status=status.HTTP_403_FORBIDDEN
         )
+
+# -------------------------
+# Search Decks and Flashcards
+# -------------------------
+class SearchView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        query = request.query_params.get("q", "")
+        if not query:
+            return Response({"detail": "Please provide a search term using ?q=keyword"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Search decks and flashcards (case-insensitive)
+        decks = Deck.objects.filter(Q(title__icontains=query) | Q(description__icontains=query))
+        flashcards = Flashcard.objects.filter(Q(question__icontains=query) | Q(answer__icontains=query))
+
+        deck_data = DeckSerializer(decks, many=True).data
+        flashcard_data = FlashcardSerializer(flashcards, many=True).data
+
+        return Response({
+            "query": query,
+            "decks_found": deck_data,
+            "flashcards_found": flashcard_data
+        })

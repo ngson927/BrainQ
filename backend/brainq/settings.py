@@ -88,9 +88,9 @@ WSGI_APPLICATION = 'brainq.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',  
-        'NAME': 'brainq_db',                  
+        'NAME': 'brainq',                  
         'USER': 'root',        # Replace with your MySQL username
-        'PASSWORD': 'Pass123',    # Replace with your MySQL password
+        'PASSWORD': 'root@123',    # Replace with your MySQL password
         'HOST': 'localhost',                  # Usually localhost
         'PORT': '3306',                       # Default MySQL port
     }

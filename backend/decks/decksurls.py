@@ -5,7 +5,8 @@ from .views import (
     DeckDetailView,
     DeckListView,
     CreateFlashcardView,
-    FlashcardListView
+    FlashcardListView,
+    SearchView
 )
 
 urlpatterns = [
@@ -17,6 +18,8 @@ urlpatterns = [
 
     # ----- Flashcard endpoints -----
     path('flashcards/create/', CreateFlashcardView.as_view(), name='flashcard-create'),
-    path('flashcards/list/<int:deck_id>/', FlashcardListView.as_view(), name='flashcard-list')
+    path('flashcards/list/<int:deck_id>/', FlashcardListView.as_view(), name='flashcard-list'),
+    path('search/', SearchView.as_view(), name='search')
+
 
 ]

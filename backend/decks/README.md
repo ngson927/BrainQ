@@ -17,3 +17,17 @@ body example: {
 }
 flashcard number will be generated after creation
 GET api/flashcards/list/<deck number>/ To list flashcards created within a deck
+
+---
+Search Feature
+
+Endpoint:  
+POST /api/search/ to search for a deck or a flashcard
+
+Description  
+Allows users to search across all decks and flashcards using a keyword.
+
+Body Example:
+{
+  "query": "photosynthesis"
+}
