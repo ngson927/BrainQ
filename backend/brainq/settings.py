@@ -32,6 +32,7 @@ ALLOWED_HOSTS = []
 
 INSTALLED_APPS = [
     'django.contrib.admin',
+    'corsheaders',
     'rest_framework',
     'rest_framework.authtoken',
     'users',  #  custom user app
@@ -40,7 +41,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'decks'    # decks app
+    'decks'
 ]
 
 REST_FRAMEWORK = {
@@ -53,6 +54,7 @@ REST_FRAMEWORK = {
 }
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -87,12 +89,12 @@ WSGI_APPLICATION = 'brainq.wsgi.application'
 
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',  
-        'NAME': 'brainq_db',                  
-        'USER': 'root',        # Replace with your MySQL username
-        'PASSWORD': 'Pass123',    # Replace with your MySQL password
-        'HOST': 'localhost',                  # Usually localhost
-        'PORT': '3306',                       # Default MySQL port
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'brainq_db',
+        'USER': 'teamuser',
+        'PASSWORD': 'ASCIND!brainQ2026!?',
+        'HOST': 'brainq-db.cm9mucauwfzx.us-east-1.rds.amazonaws.com',
+        'PORT': '3306',
     }
 }
 
@@ -116,6 +118,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
+CORS_ALLOW_ALL_ORIGINS = False
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",   # Example for React
+    "http://127.0.0.1:8000",   # Django itself
+]
+
+# Instead of listing ports manually, add this:
+CORS_ALLOW_ALL_ORIGINS = True  # <-- for local dev only
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
@@ -139,5 +150,5 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_USER_MODEL = 'users.CustomUser'
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
-DEFAULT_FROM_EMAIL = "noreply@example.com"
+EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+DEFAULT_FROM_EMAIL = 'no-reply@brainq.local'
