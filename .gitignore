@@ -1,53 +1,140 @@
-# =====================
-# Python / Django Backend
-# =====================
+# ==========================================================
+# 🌍 GENERAL & OS FILES
+# ==========================================================
+.DS_Store
+Thumbs.db
+*~
+*.bak
+*.swp
+*.tmp
+*.old
+*.log
+logs/
 
-# Byte-compiled / optimized / DLL files
+# ==========================================================
+# 🧠 PYTHON / DJANGO BACKEND
+# ==========================================================
+# Byte-compiled / optimized files
 __pycache__/
 *.py[cod]
 *$py.class
 
 # Virtual environments
 .venv/
-venv/
 env/
+venv/
 
-# Django / Database
+# Database
 db.sqlite3
-*.log
+*.sqlite3
+
+# Django folders
 media/
 staticfiles/
+
+# Migrations (remove if you want to version control)
+migrations/
+
+# Coverage / testing
+.coverage
+.coverage.*
+.cache/
+htmlcov/
+nosetests.xml
+coverage.xml
+*.cover
 
 # Python package metadata
 *.dist-info/
 *.egg-info/
 
-# =====================
-# Environment & Secrets
-# =====================
+# Local env / secrets
 .env
 .env.*
 !.env.example
 
-# =====================
-# IDE & OS Files
-# =====================
-.vscode/
-.DS_Store
-Thumbs.db
+# ==========================================================
+# ⚙️ NODE / FRONTEND (React, Next.js, Vite, etc.)
+# ==========================================================
+node_modules/
+bower_components/
+jspm_packages/
+web_modules/
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
 
-# =====================
-# Logs & Reports
-# =====================
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
-
-# =====================
-# Miscellaneous
-# =====================
-coverage/
+# Build outputs
+dist/
+build/
+.next/
+out/
+.nuxt/
 .cache/
+.parcel-cache/
+.svelte-kit/
+.vuepress/dist/
+.temp/
+.docusaurus/
+.vitepress/dist/
+.vitepress/cache/
+
+# Runtime / logs / tool caches
+*.pid
+*.seed
+*.pid.lock
+.npm
+.eslintcache
+.stylelintcache
+.node_repl_history
+.yarn-integrity
+.yarnrc.yml
+lib-cov
+.nyc_output
+.lock-wscript
+.grunt
+.serverless/
+.fusebox/
+.dynamodb/
+.firebase/
+.tern-port
+
+# ==========================================================
+# 🧰 IDEs & EDITORS
+# ==========================================================
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+.vscode-test/
+
+# ==========================================================
+# 🧪 FLUTTER / MOBILE
+# ==========================================================
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+pubspec.lock
+build/
+ios/Flutter/.last_build_id
+*.iml
+android/.gradle/
+android/app/build/
+ios/Pods/
+ios/Runner.xcworkspace/
+ios/Podfile.lock
+*.jks
+*.keystore
+
+# ==========================================================
+# 🧭 MISCELLANEOUS / SECRETS
+# ==========================================================
+secrets.json
+*.pem
+*.key
+*.crt
+*.csr
