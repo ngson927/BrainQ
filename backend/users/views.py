@@ -39,19 +39,37 @@ class LoginView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request):
-        username = request.data.get('username')
+        username_or_email = request.data.get('username')  # field stays the same
         password = request.data.get('password')
-        user = authenticate(username=username, password=password)
+
+        if not username_or_email or not password:
+            return Response(
+                {"error": "Username/email and password are required"}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Try authenticating with username first
+        user = authenticate(username=username_or_email, password=password)
+
+        if not user:
+            # If username auth fails, try email
+            try:
+                user_obj = CustomUser.objects.get(email=username_or_email)
+                user = authenticate(username=user_obj.username, password=password)
+            except CustomUser.DoesNotExist:
+                user = None
+
         if user:
             token, _ = Token.objects.get_or_create(user=user)
             return Response({
-                            'token': token.key,
-                            'user_id': user.id,
-                            'username': user.username,
-                            'role': user.role
-                            })
+                'token': token.key,
+                'user_id': user.id,
+                'username': user.username,
+                'email': user.email,  # ✅ include email here
+                'role': user.role
+            })
 
-        return Response({"error": "Invalid Credentials"}, status=400)
+        return Response({"error": "Invalid Credentials"}, status=status.HTTP_400_BAD_REQUEST)
 
 
 

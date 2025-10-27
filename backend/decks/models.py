@@ -1,5 +1,8 @@
 from django.db import models
 from django.conf import settings
+import random
+from django.utils import timezone
+
 
 
 class Deck(models.Model):
@@ -39,3 +42,58 @@ class Flashcard(models.Model):
     def __str__(self):
         return f"Flashcard for {self.deck.title}: {self.question[:50]}"
 
+# Quiz session models
+class QuizSession(models.Model):
+    MODE_CHOICES = [
+        ("random", "Random"),
+        ("sequential", "Sequential"),
+    ]
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    deck = models.ForeignKey(Deck, on_delete=models.CASCADE)
+    mode = models.CharField(max_length=20, choices=MODE_CHOICES)
+    started_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    is_paused = models.BooleanField(default=False)
+    correct_count = models.PositiveIntegerField(default=0)
+    total_answered = models.PositiveIntegerField(default=0)
+    current_index = models.PositiveIntegerField(default=0)
+    order = models.JSONField(default=list)  # List of flashcard IDs in quiz order
+
+    def initialize_order(self):
+        if self.mode == 'random':
+            flashcards = list(self.deck.flashcards.values_list('id', flat=True))
+            random.shuffle(flashcards)
+        else:  # sequential
+            flashcards = list(self.deck.flashcards.order_by('created_at').values_list('id', flat=True))
+        self.order = flashcards
+        self.current_index = 0
+        self.finished_at = None  # reset finished state
+        self.save()
+
+    def get_current_flashcard_id(self):
+        """Return the current flashcard ID or None if quiz finished."""
+        if self.current_index < len(self.order):
+            return self.order[self.current_index]
+        return None
+
+    def increment_index(self):
+        """Move to next flashcard. Mark finished if at end."""
+        self.current_index += 1
+        if self.current_index >= len(self.order):
+            self.finished_at = timezone.now()  # mark quiz finished
+            self.current_index = len(self.order)  # keep index at end
+        self.save()
+
+    def accuracy(self):
+        if self.total_answered == 0:
+            return 0.0
+        return self.correct_count / self.total_answered
+
+
+class QuizSessionFlashcard(models.Model):
+    session = models.ForeignKey(QuizSession, on_delete=models.CASCADE, related_name='flashcard_attempts')
+    flashcard = models.ForeignKey(Flashcard, on_delete=models.CASCADE)
+    answered = models.BooleanField(default=False)
+    correct = models.BooleanField(default=False)
+    answer_given = models.TextField(blank=True)
+    answered_at = models.DateTimeField(null=True, blank=True)

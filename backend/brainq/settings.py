@@ -20,7 +20,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-nqp+nt50r0ymsx#&k05xqnglal25pu&9fs3q5%wfa_*g3k8!k7'
+import os
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-placeholder-secret")
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -50,6 +51,9 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_RENDERER_CLASSES': (
+        'rest_framework.renderers.JSONRenderer',  # <--- ensures JSON only
     ),
 }
 
@@ -90,13 +94,14 @@ WSGI_APPLICATION = 'brainq.wsgi.application'
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'brainq_db',
-        'USER': 'teamuser',
-        'PASSWORD': 'ASCIND!brainQ2026!?',
-        'HOST': 'brainq-db.cm9mucauwfzx.us-east-1.rds.amazonaws.com',
-        'PORT': '3306',
+        'NAME': os.environ.get('DB_NAME', 'brainq_db'),
+        'USER': os.environ.get('DB_USER', 'user'),
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
+        'HOST': os.environ.get('DB_HOST', 'localhost'),
+        'PORT': os.environ.get('DB_PORT', '3306'),
     }
 }
+
 
 
 
@@ -118,15 +123,30 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-CORS_ALLOW_ALL_ORIGINS = False
+# SECURITY WARNING: only do this in development!
 
+CORS_ALLOW_ALL_ORIGINS = True  # ✅ easiest for local dev
+CORS_ALLOW_CREDENTIALS = True
+
+# These are only used if you set CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",   # Example for React
-    "http://127.0.0.1:8000",   # Django itself
+    "http://localhost:3000",  # React web app
+    "http://127.0.0.1:8000",  # Django itself
+    "http://10.0.2.2:8000",   # Android emulator
+    "http://10.0.0.157:8000", # your LAN IP (for real device)
 ]
 
-# Instead of listing ports manually, add this:
-CORS_ALLOW_ALL_ORIGINS = True  # <-- for local dev only
+# Needed for CSRF and HTTPS cookie protection
+CSRF_TRUSTED_ORIGINS = [
+    "http://127.0.0.1:8000",
+    "http://localhost:8000",
+    "http://10.0.2.2:8000",
+    "http://10.0.0.157:8000",
+]
+
+ALLOWED_HOSTS = ['*']
+
+
 
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
