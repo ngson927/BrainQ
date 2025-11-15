@@ -17,3 +17,18 @@ body example: {
 }
 flashcard number will be generated after creation
 GET api/flashcards/list/<deck number>/ To list flashcards created within a deck
+
+Rating system:
+POST api/decks/<deckid>/feedback
+body example: {
+  "rating": 5 #rating 1-5 
+  "comment" "this deck is well put together."
+
+deck customization:
+POST api/decks/create/ when creating a new deck
+Patch api/decks/<deckid>/edit/ for already existing decks
+body examples: {
+  "theme": "dark
+  "color": "black"
+  text_color: "white"
+  "card_order": "asc"
