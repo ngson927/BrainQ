@@ -1,12 +1,15 @@
 from rest_framework import serializers
-from .models import Flashcard
-from .models import Deck
+from .models import Flashcard, Deck, Feedback  # <-- added Feedback
 
+
+# -------------------------
+# Flashcard Serializer
+# -------------------------
 class FlashcardSerializer(serializers.ModelSerializer):
     class Meta:
         model = Flashcard
         fields = ['id', 'deck', 'question', 'answer', 'created_at', 'updated_at']
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'created_at', 'user']
     
     def validate_question(self, value):
         if not value.strip():
@@ -19,45 +22,57 @@ class FlashcardSerializer(serializers.ModelSerializer):
         return value
 
 
+# -------------------------
+# Feedback Serializer
+# -------------------------
+class FeedbackSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField(read_only=True)
 
+    class Meta:
+        model = Feedback
+        fields = ['id', 'deck', 'user', 'rating', 'comment', 'created_at']
+        read_only_fields = ['id', 'user', 'created_at']
+
+    def validate_rating(self, value):
+        if not (1 <= value <= 5):
+            raise serializers.ValidationError("Rating must be between 1 and 5.")
+        return value
+
+
+# -------------------------
+# Deck Serializer (UPDATED WITH CUSTOMIZATION FIELDS)
+# -------------------------
 class DeckSerializer(serializers.ModelSerializer):
     owner = serializers.ReadOnlyField(source='owner.username')
-    owner_id = serializers.ReadOnlyField(source='owner.id')  # <-- ADD THIS
-    flashcards = FlashcardSerializer(many=True, read_only=True)  # show flashcards with deck
+    flashcards = FlashcardSerializer(many=True, read_only=True)
+    feedbacks = FeedbackSerializer(many=True, read_only=True)
+    average_rating = serializers.SerializerMethodField()
 
     class Meta:
         model = Deck
         fields = [
-            'id', 'owner', 'owner_id', 'title', 'description', 'is_public',
-            'created_at', 'updated_at', 'flashcards'
+            'id', 'owner', 'title', 'description', 'is_public',
+            'theme', 'color', 'font_size', 'card_order','text_color',  # <-- NEW FIELDS
+            'created_at', 'updated_at', 
+            'flashcards', 'feedbacks', 'average_rating'
         ]
-        read_only_fields = ['id', 'owner', 'owner_id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'owner', 'created_at', 'updated_at']
 
-    def validate_title(self, value):
-        if not value.strip():
-            raise serializers.ValidationError("Title must not be empty.")
+    # VALIDATIONS FOR CUSTOMIZATION
+    def validate_font_size(self, value):
+        if value < 10 or value > 40:
+            raise serializers.ValidationError("Font size must be between 10 and 40.")
         return value
 
-# Quiz serializers
-from .models import QuizSession, QuizSessionFlashcard
+    def validate_card_order(self, value):
+        allowed = ['asc', 'desc', 'random']
+        if value not in allowed:
+            raise serializers.ValidationError(f"Card order must be one of: {allowed}")
+        return value
 
-class QuizSessionFlashcardSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = QuizSessionFlashcard
-        fields = ['id', 'flashcard', 'answered', 'correct', 'answer_given', 'answered_at']
-
-
-class QuizSessionSerializer(serializers.ModelSerializer):
-    flashcard_attempts = QuizSessionFlashcardSerializer(many=True, read_only=True)
-    accuracy = serializers.SerializerMethodField()
-
-    class Meta:
-        model = QuizSession
-        fields = [
-            'id', 'user', 'deck', 'mode', 'started_at', 'finished_at', 'is_paused',
-            'correct_count', 'total_answered', 'current_index', 'order', 'flashcard_attempts', 'accuracy'
-        ]
-        read_only_fields = ['user', 'started_at', 'finished_at', 'correct_count', 'total_answered', 'current_index', 'order', 'flashcard_attempts', 'accuracy']
-
-    def get_accuracy(self, obj):
-        return obj.accuracy()
+    def get_average_rating(self, obj):
+        feedbacks = obj.feedbacks.all()
+        if feedbacks.exists():
+            avg = sum(f.rating for f in feedbacks) / feedbacks.count()
+            return round(avg, 2)
+        return None
