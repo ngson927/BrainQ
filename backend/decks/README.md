@@ -19,7 +19,8 @@ flashcard number will be generated after creation
 GET api/flashcards/list/<deck number>/ To list flashcards created within a deck
 
 Rating system:
-POST api/decks/<deckid>/feedback
+POST api/decks/<deckid>/feedback/ to create feedback
+GET api/decks/<deckid>/feddbacks/ to view feedbacks 
 body example: {
   "rating": 5 #rating 1-5 
   "comment" "this deck is well put together."
