@@ -80,5 +80,20 @@ class Feedback(models.Model):
         unique_together = ('deck', 'user')
         ordering = ['-created_at']
 
+
+# -------------------------
+# Reminder Model
+# -------------------------
+class Reminder(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reminders')
+    message = models.CharField(max_length=255)
+    remind_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Reminder for {self.user} at {self.remind_at}: {self.message}"
+
     def __str__(self):
         return f"{self.user.username} -> {self.deck.title} ({self.rating}★)"
