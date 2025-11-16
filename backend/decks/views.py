@@ -6,8 +6,52 @@ from rest_framework.authentication import TokenAuthentication
 from django.shortcuts import get_object_or_404
 from django.db import IntegrityError, transaction
 from django.db.models import Q
-from .models import Deck, Flashcard, Feedback  # <-- added Feedback
-from .serializers import DeckSerializer, FlashcardSerializer, FeedbackSerializer  # <-- added FeedbackSerializer
+from .models import Deck, Flashcard, Feedback, Reminder
+from .serializers import DeckSerializer, FlashcardSerializer, FeedbackSerializer, ReminderSerializer
+# ------------------------- 
+# Reminder CRUD API Views
+# -------------------------
+class ReminderListCreateView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        reminders = Reminder.objects.filter(user=request.user)
+        serializer = ReminderSerializer(reminders, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = ReminderSerializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save(user=request.user)
+            return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class ReminderDetailView(APIView):
+    authentication_classes = [TokenAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self, pk, user):
+        return get_object_or_404(Reminder, pk=pk, user=user)
+
+    def get(self, request, pk):
+        reminder = self.get_object(pk, request.user)
+        serializer = ReminderSerializer(reminder)
+        return Response(serializer.data)
+
+    def patch(self, request, pk):
+        reminder = self.get_object(pk, request.user)
+        serializer = ReminderSerializer(reminder, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response(serializer.data)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def delete(self, request, pk):
+        reminder = self.get_object(pk, request.user)
+        reminder.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 from .permissions import IsOwnerOrReadOnly
 
 # -------------------------
