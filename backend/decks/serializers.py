@@ -1,5 +1,15 @@
 from rest_framework import serializers
-from .models import Flashcard, Deck, Feedback  # <-- added Feedback
+from .models import Flashcard, Deck, Feedback, Reminder
+# -------------------------
+# Reminder Serializer
+# -------------------------
+class ReminderSerializer(serializers.ModelSerializer):
+    user = serializers.StringRelatedField(read_only=True)
+
+    class Meta:
+        model = Reminder
+        fields = ['id', 'user', 'message', 'remind_at', 'is_active', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'user', 'created_at', 'updated_at']
 
 
 # -------------------------
