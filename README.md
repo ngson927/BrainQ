@@ -37,6 +37,16 @@ macOS/Linux: .venv/bin/activate
 
 Install dependencies: pip install -r requirements.txt
 
+pip install django
+
+pip install djangorestframework
+
+pip install mysqlclient
+
+pip install djangorestframework-simplejwt
+
+pip install django-cors-headers
+
 
 Configure environment variables: Create a .env file (or update settings.py) with your database credentials and email settings.
 
