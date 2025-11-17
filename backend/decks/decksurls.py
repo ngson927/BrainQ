@@ -7,9 +7,8 @@ from .views import (
     CreateFlashcardView,
     FlashcardListView,
     AddFeedbackView,        # <-- POST feedback
-    DeckFeedbackListView,   # <-- GET list of feedbacks
-    ReminderListCreateView,
-    ReminderDetailView
+    DeckFeedbackListView,
+    ShareDeckView    # <-- GET list of feedbacks
 )
 
 urlpatterns = [
@@ -29,7 +28,7 @@ urlpatterns = [
     # List feedback for a deck
     path('decks/<int:deck_id>/feedbacks/', DeckFeedbackListView.as_view(), name='deck-feedbacks'),
 
-    # ----- Reminder endpoints -----
-    path('reminders/', ReminderListCreateView.as_view(), name='reminder-list-create'),
-    path('reminders/<int:pk>/', ReminderDetailView.as_view(), name='reminder-detail'),
+    path('decks/<int:deck_id>/share/', ShareDeckView.as_view(), name='deck-share'),
+
+
 ]
