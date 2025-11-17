@@ -25,6 +25,13 @@ class Deck(models.Model):
     card_order = models.CharField(max_length=10, default="asc")              # asc/desc/random
     text_color = models.CharField(max_length=20, blank=True, null=True)  # e.g., "#000000"
 
+    #share feature
+    shared_with = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name="shared_decks",
+        blank=True
+)
+
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -79,21 +86,6 @@ class Feedback(models.Model):
     class Meta:
         unique_together = ('deck', 'user')
         ordering = ['-created_at']
-
-
-# -------------------------
-# Reminder Model
-# -------------------------
-class Reminder(models.Model):
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='reminders')
-    message = models.CharField(max_length=255)
-    remind_at = models.DateTimeField()
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    def __str__(self):
-        return f"Reminder for {self.user} at {self.remind_at}: {self.message}"
 
     def __str__(self):
         return f"{self.user.username} -> {self.deck.title} ({self.rating}★)"
