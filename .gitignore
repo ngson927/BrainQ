@@ -146,7 +146,7 @@ secrets.json
 
 # Firebase credentials
 backend/brainq/service_account.json
-lib/firebase_options.dart
+brainq_app/lib/firebase_options.dart
 google-services.json
 GoogleService-Info.plist
 
