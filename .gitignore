@@ -146,7 +146,7 @@ secrets.json
 
 # Firebase credentials
 backend/brainq/service_account.json
-brainq_app/firebase_options.dart
+brainq_app/lib/firebase_options.dart
 google-services.json
 GoogleService-Info.plist
 
@@ -162,3 +162,4 @@ admin_activity.log
 # Celery beat schedule (runtime)
 backend/celerybeat-schedule.dat
 backend/celerybeat-schedule.dir
+
