@@ -305,11 +305,11 @@ BrainQ represents both our technical skills and our ability to deliver a complet
 
 Developed by the BrainQ Team:
 
-**Aminata Diallo**
-**Benedict Cheong**
-**Farrel Amaladason**
-**Jahvarie Innerarity**
-**Roshan Savarimuthu**
-**Son Nguyen**
+* Aminata Diallo
+* Benedict Cheong
+* Farrel Amaladason
+* Jahvarie Innerarity
+* Roshan Savarimuthu
+* Son Nguyen
 
 Project: BrainQ – AI-Powered Learning Platform
