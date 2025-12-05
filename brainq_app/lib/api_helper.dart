@@ -1,9 +1,13 @@
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'config.dart';
 
 class ApiHelper {
+  static const String _authTokenKey = 'token';
+  static const String _userIdKey = 'userId';
+
   /// Returns the proper base URL depending on platform
   static String get baseUrl {
     if (kIsWeb) return ApiConfig.webBaseUrl;
@@ -11,7 +15,6 @@ class ApiHelper {
     return ApiConfig.localBaseUrl; // iOS simulator or desktop
   }
 
-  /// Normalize URL to avoid double slashes
   static Uri _buildUri(String path) {
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
     final fullUrl = baseUrl.endsWith('/')
@@ -20,7 +23,7 @@ class ApiHelper {
     return Uri.parse(fullUrl);
   }
 
-  /// A reusable HTTP request handler with optional logging
+  /// Generic request handler with error handling
   static Future<http.Response> _handleRequest(
     Future<http.Response> Function() request,
     String path, {
@@ -29,86 +32,66 @@ class ApiHelper {
     try {
       final response = await request();
 
-      // Debug logging (only in dev mode)
       if (kDebugMode) {
-        debugPrint(
-          '[$method] ${_buildUri(path)} → ${response.statusCode}\n'
-          'Response: ${response.body}',
-        );
+        debugPrint('[$method] ${_buildUri(path)} → ${response.statusCode}');
+        debugPrint('Response: ${response.body}');
       }
 
       return response;
-    } on SocketException catch (_) {
+    } on SocketException {
       throw Exception('No Internet connection');
-    } on HttpException catch (_) {
+    } on HttpException {
       throw Exception('Failed to connect to server');
-    } on FormatException catch (_) {
+    } on FormatException {
       throw Exception('Invalid response format');
     } catch (e) {
       throw Exception('Unexpected error: $e');
     }
   }
 
-  /// GET request wrapper
-  static Future<http.Response> get(
-    String path, {
-    Map<String, String>? headers,
-  }) async {
-    return _handleRequest(
-      () => http.get(_buildUri(path), headers: headers),
-      path,
-      method: 'GET',
-    );
+  // ------------------------
+  // HTTP Methods
+  // ------------------------
+  static Future<http.Response> get(String path, {Map<String, String>? headers}) =>
+      _handleRequest(() => http.get(_buildUri(path), headers: headers), path, method: 'GET');
+
+  static Future<http.Response> post(String path, {Map<String, String>? headers, Object? body}) =>
+      _handleRequest(() => http.post(_buildUri(path), headers: headers, body: body), path, method: 'POST');
+
+  static Future<http.Response> put(String path, {Map<String, String>? headers, Object? body}) =>
+      _handleRequest(() => http.put(_buildUri(path), headers: headers, body: body), path, method: 'PUT');
+
+  static Future<http.Response> patch(String path, {Map<String, String>? headers, Object? body}) =>
+      _handleRequest(() => http.patch(_buildUri(path), headers: headers, body: body), path, method: 'PATCH');
+
+  static Future<http.Response> delete(String path, {Map<String, String>? headers}) =>
+      _handleRequest(() => http.delete(_buildUri(path), headers: headers), path, method: 'DELETE');
+
+  // ------------------------
+  // Auth Token / User ID Helpers
+  // ------------------------
+  static Future<String?> getAuthToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_authTokenKey);
   }
 
-  /// POST request wrapper
-  static Future<http.Response> post(
-    String path, {
-    Map<String, String>? headers,
-    Object? body,
-  }) async {
-    return _handleRequest(
-      () => http.post(_buildUri(path), headers: headers, body: body),
-      path,
-      method: 'POST',
-    );
+  static Future<void> saveAuthToken(String token) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_authTokenKey, token);
   }
 
-  /// PUT request wrapper
-  static Future<http.Response> put(
-    String path, {
-    Map<String, String>? headers,
-    Object? body,
-  }) async {
-    return _handleRequest(
-      () => http.put(_buildUri(path), headers: headers, body: body),
-      path,
-      method: 'PUT',
-    );
+  static Future<void> clearAuthToken() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_authTokenKey);
   }
 
-  /// PATCH request wrapper
-  static Future<http.Response> patch(
-    String path, {
-    Map<String, String>? headers,
-    Object? body,
-  }) async {
-    return _handleRequest(
-      () => http.patch(_buildUri(path), headers: headers, body: body),
-      path,
-      method: 'PATCH',
-    );
+  static Future<void> saveUserId(String userId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_userIdKey, userId);
   }
 
-  /// DELETE request wrapper
-  static Future<http.Response> delete(
-    String path, {
-    Map<String, String>? headers,
-  }) async {
-    return _handleRequest(
-      () => http.delete(_buildUri(path), headers: headers),
-      path,
-      method: 'DELETE',
-    );
+  static Future<String?> getUserId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_userIdKey);
   }
 }

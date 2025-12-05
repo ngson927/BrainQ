@@ -4,7 +4,7 @@ import 'package:brainq_app/services/api_service.dart';
 class QuizResultsScreen extends StatefulWidget {
   final int sessionId;
   final String token;
-  final int? correctCount; // for timed/local fallback
+  final int? correctCount;
   final int? totalAnswered;
 
   const QuizResultsScreen({
@@ -38,7 +38,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
     );
     _animation = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
 
-    // If local data provided (e.g., timed mode), show instantly
     if (widget.correctCount != null && widget.totalAnswered != null) {
       correctCount = widget.correctCount!;
       totalAnswered = widget.totalAnswered!;
@@ -51,12 +50,16 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
   }
 
   Future<void> _fetchResults() async {
+    if (!mounted) return; 
     setState(() => isLoading = true);
+
     try {
       final res = await ApiService.getResults(
         sessionId: widget.sessionId,
         token: widget.token,
       );
+
+      if (!mounted) return;
 
       setState(() {
         correctCount = res['correct_count'] ?? 0;
@@ -66,14 +69,18 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
         isLoading = false;
       });
 
-      _controller.forward();
+      if (mounted) _controller.forward();
+
     } catch (e) {
+      if (!mounted) return;
+
       setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to fetch results: $e')),
       );
     }
   }
+
 
   @override
   void dispose() {
@@ -116,7 +123,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                     children: [
                       const SizedBox(height: 30),
 
-                      // 🟣 Animated Accuracy Circle
                       Stack(
                         alignment: Alignment.center,
                         children: [
@@ -149,7 +155,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                                 "Accuracy",
                                 style: theme.textTheme.bodyMedium!.copyWith(
                                   color: theme.textTheme.bodyMedium?.color
-                                      ?.withOpacity(0.8),
+                                      ?.withValues(alpha: 0.8),
                                 ),
                               ),
                             ],
@@ -159,7 +165,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 
                       const SizedBox(height: 32),
 
-                      // 🧮 Score Card
                       Container(
                         width: double.infinity,
                         padding: const EdgeInsets.symmetric(
@@ -182,7 +187,7 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
                               "Score",
                               style: theme.textTheme.titleLarge!.copyWith(
                                 color: theme.textTheme.bodyLarge?.color
-                                    ?.withOpacity(0.9),
+                                    ?.withValues(alpha: 0.9),
                               ),
                             ),
                             const SizedBox(height: 12),
@@ -199,7 +204,6 @@ class _QuizResultsScreenState extends State<QuizResultsScreen>
 
                       const SizedBox(height: 40),
 
-                      // 🔙 Back Button
                       ElevatedButton.icon(
                         onPressed: () => Navigator.pop(context),
                         style: ElevatedButton.styleFrom(

@@ -1,15 +1,21 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+
 import 'package:go_router/go_router.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../providers/deck_provider.dart';
 import '../../models/deck_item.dart';
 import '../../services/api_service.dart';
+import '../AI/ai_chat_screen.dart';
 import '../deck/create_deck_screen.dart';
-import '../quiz/deck_screen.dart';
-import '../settings/settings_screen.dart';
+import '../deck/ai_deck_screen.dart';
 import '../stats_screen.dart';
+import 'deck_card.dart';
+import 'library_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -24,13 +30,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
   List<DeckItem> _searchResults = [];
   bool _isSearching = false;
   bool _loadingSearch = false;
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
+  late Future<Map<String, dynamic>> _streakFuture;
+
 
   @override
   void initState() {
     super.initState();
-    _loadDecks();
-    final deckProv = Provider.of<DeckProvider>(context, listen: false);
-    deckProv.loadRecents();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDecks();
+    });
+
+    _searchController.addListener(() {
+      final query = _searchController.text;
+      if (query != _searchQuery) {
+        _onSearchChanged(query);
+      }
+    });
+
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+    if (auth.token != null) {
+      _streakFuture = ApiService.getStreak(token: auth.token!);
+    }
+  }
+
+
+
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadDecks() async {
@@ -40,82 +73,199 @@ class _DashboardScreenState extends State<DashboardScreen> {
     if (auth.isLoggedIn && auth.token != null && auth.userId != null) {
       deckProv.setAuth(token: auth.token!, userId: auth.userId!);
       await deckProv.fetchDecks();
-      if (mounted) setState(() {});
     }
   }
 
-  /// ---- SEARCH HANDLER ----
-
-Future<void> _onSearchChanged(String query) async {
-  setState(() {
-    _searchQuery = query;
-    _isSearching = query.isNotEmpty;
-    _searchResults = [];
-    _loadingSearch = true;
-  });
-
-  if (query.isEmpty) {
-    setState(() => _loadingSearch = false);
-    return;
+  void _clearSearch() {
+    FocusScope.of(context).unfocus();
+    _searchController.clear();
+    setState(() {
+      _searchQuery = '';
+      _searchResults = [];
+      _isSearching = false;
+      _loadingSearch = false;
+    });
   }
 
-  try {
-    final auth = Provider.of<AuthProvider>(context, listen: false);
-    final token = auth.isLoggedIn ? auth.token : null;
+  Future<void> _onSearchChanged(String query) async {
+    if (_searchDebounce?.isActive ?? false) _searchDebounce!.cancel();
 
-    final result = await ApiService.search(query: query, token: token);
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () async {
+      setState(() {
+        _searchQuery = query;
+        _isSearching = query.isNotEmpty;
+        _searchResults = [];
+        _loadingSearch = true;
+      });
 
-    final decksJson = result['decks_found'] as List<dynamic>;
-    final decks = decksJson.map((d) => DeckItem.fromBackendJson(d)).toList();
+      if (query.isEmpty) {
+        setState(() => _loadingSearch = false);
+        return;
+      }
 
-    // ---- Tab-specific filtering ----
-    List<DeckItem> filtered;
-    if (_selectedIndex == 0) {
-      // Home: only public decks
-      filtered = decks.where((d) => d.isPublic).toList();
-    } else if (_selectedIndex == 1) {
-      // Library: user’s decks AND public decks
-      filtered = decks.where((d) => d.ownerId == auth.userId || d.isPublic).toList();
-    } else {
-      filtered = decks;
-    }
+      try {
+        final auth = Provider.of<AuthProvider>(context, listen: false);
+        final token = auth.isLoggedIn ? auth.token : null;
+        final result = await ApiService.search(query: query, token: token);
 
-    setState(() => _searchResults = filtered);
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text("Search failed: $e")));
-    }
-  } finally {
-    if (mounted) setState(() => _loadingSearch = false);
+        final decksJson = result['decks_found'] as List<dynamic>;
+        final decks = decksJson.map((d) => DeckItem.fromBackendJson(d)).toList();
+
+        // Tab-specific filtering
+        List<DeckItem> filtered;
+        if (_selectedIndex == 0) {
+          filtered = decks.where((d) => d.isPublic).toList();
+        } else if (_selectedIndex == 1) {
+          filtered = decks.where((d) => d.ownerId == auth.userId || d.isPublic).toList();
+        } else {
+          filtered = decks;
+        }
+
+        if (mounted) setState(() => _searchResults = filtered);
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context)
+              .showSnackBar(SnackBar(content: Text("Search failed: $e")));
+        }
+      } finally {
+        if (mounted) setState(() => _loadingSearch = false);
+      }
+    });
   }
-}
 
+  // ---- Search Results UI ----
+  Widget _buildSearchResults() {
+    if (_loadingSearch) return const Center(child: CircularProgressIndicator());
 
+    if (_searchQuery.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+          child: Text(
+            'Type to search decks',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ),
+      );
+    }
 
-// ---- SEARCH RESULTS UI ----
-Widget _buildSearchResults() {
-  if (_loadingSearch) return const Center(child: CircularProgressIndicator());
+    if (_searchResults.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+          child: Text(
+            'No results found for "$_searchQuery"',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 16, color: Colors.grey),
+          ),
+        ),
+      );
+    }
 
-  if (_searchResults.isEmpty) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-        child: Text(
-          'No results found for "$_searchQuery"',
-          textAlign: TextAlign.center,
-          style: const TextStyle(fontSize: 16, color: Colors.grey),
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      itemCount: _searchResults.length,
+      itemBuilder: (_, index) => DeckCard(
+        deck: _searchResults[index],
+        showArchiveOption: true,
+        showEditDeleteOptions: true,
+      ),
+    );
+  }
+
+  // ---- Home Tab ----
+  Widget _buildHome(List<DeckItem> decks, String? userId) {
+    final deckProv = Provider.of<DeckProvider>(context);
+    final recentDecks = deckProv.recents;
+
+    if (recentDecks.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: _loadDecks,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
+                child: Text(
+                  'No recent decks yet. View or study one to see it here!',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: _loadDecks,
+      child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        itemCount: recentDecks.length,
+        itemBuilder: (_, index) => DeckCard(
+          deck: recentDecks[index],
+          showArchiveOption: true,
+          showEditDeleteOptions: true,
         ),
       ),
     );
   }
 
-  return ListView.builder(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    itemCount: _searchResults.length,
-    itemBuilder: (_, index) => _buildDeckCard(_searchResults[index]),
-  );
-}
+  Widget _buildStats(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
+
+    if (auth.token == null) {
+      return const Center(child: Text("Login to see your streak stats."));
+    }
+
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _streakFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        if (snapshot.hasError) {
+          return Center(child: Text("Error loading streaks: ${snapshot.error}"));
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: Text("No streak data found."));
+        }
+
+        final data = snapshot.data!;
+        final badges = <Map<String, dynamic>>[];
+        if (data['badges'] != null) {
+          for (var b in data['badges']) {
+            if (b is Map<String, dynamic>) {
+              badges.add({
+                'key': b['key'] ?? '',
+                'name': b['name'] ?? '',
+                'description': b['description'] ?? '',
+                'category': b['category'] ?? '',
+                'progress': b['progress']?.toDouble() ?? 1.0,
+              });
+            }
+          }
+        }
+
+        return StatsScreen(
+          token: auth.token!,
+          currentStreak: data['current_streak'] ?? 0,
+          bestStreak: data['best_streak'] ?? 0,
+          totalStudyDays: data['total_study_days'] ?? 0,
+          consecutivePerfectQuizzes: data['consecutive_perfect_quizzes'] ?? 0,
+          totalDecksCreated: data['total_decks_created'] ?? 0,
+          badges: badges,
+        );
+      },
+    );
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -129,7 +279,7 @@ Widget _buildSearchResults() {
           : _buildHome(deckProv.decks, auth.userId),
       _isSearching
           ? _buildSearchResults()
-          : _buildLibrary(deckProv.decks, auth.userId),
+          : LibraryScreen(userId: auth.userId),
       const SizedBox.shrink(),
       _buildStats(context),
     ];
@@ -151,22 +301,23 @@ Widget _buildSearchResults() {
                 child: (_selectedIndex == 0 || _selectedIndex == 1)
                     ? Container(
                         height: 40,
-                        margin:
-                            const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         child: TextField(
+                          controller: _searchController,
                           decoration: InputDecoration(
                             hintText: 'Search',
                             prefixIcon: const Icon(Icons.search, size: 20),
+                            suffixIcon: _searchQuery.isNotEmpty
+                                ? IconButton(icon: const Icon(Icons.clear), onPressed: _clearSearch)
+                                : null,
                             filled: true,
                             fillColor: theme.cardColor,
-                            contentPadding:
-                                const EdgeInsets.symmetric(vertical: 0),
+                            contentPadding: const EdgeInsets.symmetric(vertical: 0),
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(10),
                               borderSide: BorderSide.none,
                             ),
                           ),
-                          onChanged: _onSearchChanged,
                         ),
                       )
                     : const SizedBox.shrink(),
@@ -180,10 +331,7 @@ Widget _buildSearchResults() {
                   backgroundColor: theme.primaryColor,
                   child: Text(
                     usernameLetter,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                 ),
                 onSelected: (val) {
@@ -192,9 +340,10 @@ Widget _buildSearchResults() {
                       context.go('/');
                       break;
                     case 'notifications':
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Notifications coming soon!')),
-                      );
+                      context.push('/notifications');
+                      break;
+                    case 'reminders':
+                      context.push('/reminders');
                       break;
                     case 'settings':
                       context.go('/settings');
@@ -206,31 +355,28 @@ Widget _buildSearchResults() {
                     return [
                       PopupMenuItem(
                         value: 'login',
-                        child: Text(
-                          'Login',
-                          style: TextStyle(color: theme.textTheme.bodyLarge?.color),
-                        ),
+                        child: Text('Login', style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
                       ),
                     ];
                   }
                   return [
                     PopupMenuItem(
                       value: 'notifications',
-                      child: Text(
-                        'Notifications',
-                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
-                      ),
+                      child: Text('Notifications', style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
+                    ),
+                    const PopupMenuDivider(height: 1),
+                    PopupMenuItem(
+                      value: 'reminders',
+                      child: Text('Reminders', style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
                     ),
                     const PopupMenuDivider(height: 1),
                     PopupMenuItem(
                       value: 'settings',
-                      child: Text(
-                        'Settings',
-                        style: TextStyle(color: theme.textTheme.bodyLarge?.color),
-                      ),
+                      child: Text('Settings', style: TextStyle(color: theme.textTheme.bodyLarge?.color)),
                     ),
                   ];
                 },
+
               ),
               const SizedBox(width: 8),
             ],
@@ -246,17 +392,14 @@ Widget _buildSearchResults() {
         onTap: (index) async {
           if (index == 2) {
             if (auth.isLoggedIn) {
-              await Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CreateDeckScreen()),
-              );
-              await _loadDecks();
+              _showDeckCreationMenu();
             } else {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(content: Text('Login to create decks!')),
               );
             }
           } else {
+            _clearSearch();
             setState(() {
               _selectedIndex = index;
               _isSearching = false;
@@ -271,211 +414,171 @@ Widget _buildSearchResults() {
           BottomNavigationBarItem(icon: Icon(Icons.bar_chart), label: 'Stats'),
         ],
       ),
+      floatingActionButton: _selectedIndex == 0
+          ? FloatingActionButton(
+              onPressed: _openAIAssistant,
+              backgroundColor: Colors.deepPurple,
+              tooltip: "Chat with AI Assistant",
+              child: const Icon(Icons.smart_toy),
+            )
+          : null,
+
     );
   }
 
-  /// ---- Home tab ----
-  Widget _buildHome(List<DeckItem> decks, String? userId) {
-    final recentDecks = decks.where((d) => d.recentlyUsed).toList();
+  void _openAIAssistant() {
+    final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    if (recentDecks.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-          child: Text(
-            'No recent decks yet. View or study one to see it here!',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-        ),
+    if (!auth.isLoggedIn || auth.token == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Login to chat with AI!')),
       );
+      return;
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            "Recents",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => AIChatScreen(
+          token: auth.token!,
+          deckId: null,
+          deckTitle: 'AI Assistant',
         ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: recentDecks.length,
-            itemBuilder: (_, index) => _buildDeckCard(recentDecks[index]),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
-  /// ---- Library tab ----
-  Widget _buildLibrary(List<DeckItem> decks, String? userId) {
-    if (userId == null) return const Center(child: Text('Login to see your decks.'));
 
-    final userDecks = decks.where((d) => d.ownerId == userId).toList();
 
-    if (userDecks.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-          child: Text(
-            'You haven’t created any decks yet.\nTap + to create your first deck!',
-            textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 16, color: Colors.grey),
-          ),
-        ),
-      );
-    }
+void _showDeckCreationMenu() {
+  final auth = Provider.of<AuthProvider>(context, listen: false);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            "Your Decks",
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-        ),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: userDecks.length,
-            itemBuilder: (_, index) => _buildDeckCard(userDecks[index]),
-          ),
-        ),
-      ],
+  if (!auth.isLoggedIn || auth.token == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Login to create decks!')),
     );
+    return;
   }
 
-/// ---- Deck card widget ----
-Widget _buildDeckCard(DeckItem d) {
-  final deckProv = Provider.of<DeckProvider>(context, listen: false);
-  final userId = deckProv.userId;
-  final isOwner = d.ownerId == userId;
-
-  final colors = [
-    Theme.of(context).primaryColor,
-    Colors.teal.shade400,
-    Colors.orange.shade400,
-    Colors.purple.shade400,
-  ];
-  final icons = [Icons.psychology, Icons.lightbulb, Icons.memory, Icons.emoji_objects];
-
-  final i = d.id.hashCode % colors.length;
-  final color = colors[i];
-  final icon = icons[i % icons.length];
-
-  return Card(
-    margin: const EdgeInsets.symmetric(vertical: 10),
-    elevation: 6,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-    clipBehavior: Clip.antiAlias,
-    child: InkWell(
-      onTap: () {
-        d.recentlyUsed = true;
-        deckProv.saveRecents();
-        deckProv.notifyListeners();
-
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => DeckScreen(deck: d)),
-        );
-      },
-      child: Container(
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    isScrollControlled: true,
+    builder: (ctx) {
+      return Container(
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [color.withOpacity(0.85), color.withOpacity(0.95)],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
+          color: Theme.of(context).cardColor,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
           ),
-        ),
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-        child: Row(
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                shape: BoxShape.circle,
-              ),
-              padding: const EdgeInsets.all(10),
-              child: Icon(icon, color: Colors.white, size: 36),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          d.title,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 20,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                      if (!d.isPublic)
-                        Container(
-                          margin: const EdgeInsets.only(left: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.black45,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'Private',
-                            style: TextStyle(color: Colors.white, fontSize: 11),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    '${d.cardCount} cards',
-                    style: const TextStyle(color: Colors.white70, fontSize: 14),
-                  ),
-                ],
-              ),
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, color: Colors.white),
-              onSelected: (val) {
-                switch (val) {
-                  case 'edit':
-                    if (isOwner) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => DeckScreen(deck: d, editMode: true)),
-                      );
-                    }
-                    break;
-                  case 'share':
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Share functionality coming soon!')),
-                    );
-                    break;
-                  case 'delete':
-                    if (isOwner) deckProv.removeDeck(d.id);
-                    break;
-                }
-              },
-              itemBuilder: (_) => [
-                if (isOwner) const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                const PopupMenuItem(value: 'share', child: Text('Share')),
-                if (isOwner) const PopupMenuItem(value: 'delete', child: Text('Delete')),
-              ],
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black26,
+              blurRadius: 12,
+              offset: const Offset(0, -3),
             ),
           ],
         ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: Colors.grey[400],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Text(
+              'Create Deck',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).textTheme.bodyLarge?.color,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildMenuOption(
+                    context,
+                    icon: Icons.create,
+                    label: "Create Manually",
+                    color: Colors.blueAccent,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const CreateDeckScreen()),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _buildMenuOption(
+                    context,
+                    icon: Icons.smart_toy,
+                    label: "Generate with AI",
+                    color: Colors.purpleAccent,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => AIDeckScreen(token: auth.token!),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildMenuOption(BuildContext context,
+    {required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap}) {
+  final bgColor = color.withValues(alpha: 0.1);
+  final borderColor = color.withValues(alpha: 0.3);
+
+
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(vertical: 20),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 36, color: color),
+          const SizedBox(height: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: color.darken(0.2),
+              fontWeight: FontWeight.bold,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ],
       ),
     ),
   );
@@ -483,44 +586,13 @@ Widget _buildDeckCard(DeckItem d) {
 
 
 
-
-  /// ---- Stats tab ----
-  Widget _buildStats(BuildContext context) {
-    final totalDecksStudied = 12;
-    final totalCardsStudied = 250;
-    final totalStudyTime = const Duration(hours: 5, minutes: 30);
-    final quizAccuracy = 0.82;
-    final achievements = [
-      Achievement(
-        title: "First Quiz",
-        description: "Completed your first quiz!",
-        icon: Icons.emoji_events,
-        unlocked: true,
-      ),
-      Achievement(
-        title: "Study Streak",
-        description: "5 days in a row!",
-        icon: Icons.star,
-        unlocked: false,
-      ),
-      Achievement(
-        title: "Master Learner",
-        description: "100 cards studied",
-        icon: Icons.school,
-        unlocked: false,
-      ),
-    ];
-
-    return StatsScreen(
-      totalDecksStudied: totalDecksStudied,
-      totalCardsStudied: totalCardsStudied,
-      totalStudyTime: totalStudyTime,
-      quizAccuracy: quizAccuracy,
-      achievements: achievements,
-    );
-  }
 }
-
-
-
-
+extension ColorUtils on Color {
+  Color darken([double amount = .1]) {
+    assert(amount >= 0 && amount <= 1);
+    final hsl = HSLColor.fromColor(this);
+    final hslDark = hsl.withLightness((hsl.lightness - amount).clamp(0.0, 1.0));
+    return hslDark.toColor();
+  }
+  
+  }

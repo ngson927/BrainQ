@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../models/flashcard_attempt.dart';
 import '../models/quiz_session.dart';
 import '../services/api_service.dart';
 

@@ -14,11 +14,28 @@ Including another URLconf
     1. Import the include() function: from django.urls import include, path
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
+from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 
+from brainq import settings
+
+
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('api/users/', include('users.urls')),  # <-- includes the users app URLs
-    path('api/', include('decks.decksurls')),  # <-- includes the decks app URLs
+    path('decks/', include('decks.urls_public')),
+    path('api/users/', include('users.urls')),
+    path('api/', include('decks.decksurls')),
+    path('api/ai/', include('ai.urls')),
+    path("api/achievements/", include("achievements.urls")),
+    path("api/analytics/", include("analytics.urls")),
+    path('api/admin/', include('users.urls_admin')),
+    path('api/', include('reminders.urls')),
+        path('api/notifications/', include('notifications.urls')),
+
+
+
 ]
+
+if settings.DEBUG:
+    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

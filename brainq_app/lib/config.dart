@@ -9,5 +9,5 @@ class ApiConfig {
   static const String localBaseUrl = 'http://127.0.0.1:8000/api/';
 
   // 🔥 LAN/Wi-Fi access — use your computer’s local IP on the same Wi-Fi
-  static const String lanBaseUrl = 'http://10.0.0.157:8000/api/';
+  static const String lanBaseUrl = 'http://192.168.158.130:8000/api/';
 }

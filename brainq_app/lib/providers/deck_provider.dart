@@ -1,221 +1,475 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+
+import 'package:brainq_app/models/deck_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+
 import '../models/deck_item.dart';
 import '../models/flashcard.dart';
 import '../services/api_service.dart';
 
 class DeckProvider with ChangeNotifier {
+
   final List<DeckItem> _decks = [];
+  final List<DeckItem> _archivedDecks = [];
+  final List<DeckItem> _recents = [];
+
   String? _authToken;
   String? _userId;
 
+  DeckItem? _selectedDeck;
+
   List<DeckItem> get decks => List.unmodifiable(_decks);
-  String? get authToken => _authToken;
+  List<DeckItem> get archivedDecks => List.unmodifiable(_archivedDecks);
+  List<DeckItem> get recents => List.unmodifiable(_recents);
+
+
+  String? get token => _authToken;
   String? get userId => _userId;
+
+  DeckItem? get selectedDeck => _selectedDeck;
+  set selectedDeck(DeckItem? deck) {
+    _selectedDeck = deck;
+    notifyListeners();
+  }
+
+
+  // ------------------------------------------------------------
+  // AUTH
+  // ------------------------------------------------------------
 
   void setAuth({required String token, required String userId}) {
     _authToken = token;
     _userId = userId;
+
   }
+
 
   void clearAuth() {
     _authToken = null;
     _userId = null;
     _decks.clear();
+    _archivedDecks.clear();
+    _recents.clear();
+    _selectedDeck = null;
     notifyListeners();
   }
 
-  // ---- Fetch decks ----
+
+
+
+  // After fetchDecks, reconcile recents so that recents contain latest server fields.
+  void _reconcileRecentsWithServer() {
+    for (int i = 0; i < _recents.length; i++) {
+      final rid = _recents[i].id;
+      final serverIdx = _decks.indexWhere((d) => d.id == rid);
+      if (serverIdx != -1) {
+        _recents[i] = _decks[serverIdx];
+      } else {
+        // maybe it's archived -> check archived list
+        final aidx = _archivedDecks.indexWhere((d) => d.id == rid);
+        if (aidx != -1) {
+          _recents[i] = _archivedDecks[aidx];
+        }
+      }
+    }
+  }
+
+  // Save recents to shared prefs
+  Future<void> _saveRecents() async {
+    if (_userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final encoded = jsonEncode(_recents.map((d) => d.toJson()).toList());
+    await prefs.setString("recentDecks_$_userId", encoded);
+  }
+
+  // Load recents from shared prefs
+  Future<void> _loadRecents() async {
+    if (_userId == null) return;
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getString("recentDecks_$_userId");
+    _recents.clear();
+    if (raw == null || raw.trim().isEmpty) return;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return;
+      _recents.addAll(
+        decoded.whereType<Map<String, dynamic>>().map((d) => DeckItem.fromJson(d)),
+      );
+    } catch (e) {
+      debugPrint("⚠️ Failed to parse recents: $e");
+      _recents.clear();
+    }
+  }
+
+  // Ensure recents do not contain archived decks.
+  void _pruneRecents() {
+    _recents.removeWhere((d) => d.archived == true);
+  }
+
+  // ---------------------------------------------------------------------------
+  // FETCH DECKS
+  // ---------------------------------------------------------------------------
+
   Future<void> fetchDecks() async {
     if (_authToken == null) return;
     try {
       final res = await ApiService.listDecks(token: _authToken!);
       if (res.statusCode != 200) return;
 
-      final List data = jsonDecode(res.body);
+      final raw = jsonDecode(res.body);
+      if (raw is! List) return;
+
       _decks
         ..clear()
-        ..addAll(data.map((d) {
-          final ownerId = d['owner_id']?.toString();
-          final isPublic = d['is_public'] ?? false;
+        ..addAll(raw.map((d) => DeckItem.fromBackendJson(d)));
 
-          if (ownerId == _userId || isPublic) {
-            return DeckItem(
-              id: int.tryParse(d['id'].toString()) ?? DateTime.now().millisecondsSinceEpoch,
-              title: d['title'] ?? '',
-              description: d['description'] ?? '',
-              tags: List<String>.from(d['tags'] ?? []),
-              ownerId: ownerId,
-              isPublic: isPublic,
-              cards: (d['flashcards'] as List<dynamic>? ?? [])
-                  .map((c) => Flashcard.fromBackendJson(c))
-                  .toList(),
-            );
-          }
-          return null;
-        }).whereType<DeckItem>());
+      // Fetch archived separately
+      await fetchArchivedDecks();
 
-      await loadRecents();
+      // Load recents from storage and reconcile with fetched decks
+      await _loadRecents();
+      _reconcileRecentsWithServer();
+
+      _pruneRecents();
+
       notifyListeners();
     } catch (e) {
-      debugPrint("Error fetching decks: $e");
+      debugPrint("❌ fetchDecks error: $e");
     }
   }
 
-  // ---- Recents ----
-  Future<void> loadRecents() async {
-    if (_userId == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    final recentIds = prefs.getStringList('recentDecks_$_userId') ?? [];
-    for (final deck in _decks) {
-      deck.recentlyUsed = recentIds.contains(deck.id.toString());
-    }
-  }
+  void applyThemeFromDeck(DeckTheme? theme) {
+  if (_selectedDeck == null || theme == null) return;
 
-  Future<void> saveRecents() async {
-    if (_userId == null) return;
-    final prefs = await SharedPreferences.getInstance();
-    final recentIds = _decks.where((d) => d.recentlyUsed).map((d) => d.id.toString()).toList();
-    await prefs.setStringList('recentDecks_$_userId', recentIds);
-  }
+  _selectedDeck = _selectedDeck!.copyWith(theme: theme);
+  notifyListeners();
+}
 
-  List<DeckItem> get userDecks {
-    if (_userId == null) return [];
-    return _decks.where((d) => d.ownerId == _userId).toList();
-  }
 
-  // ---- Create deck ----
-  Future<void> createDeck(DeckItem deck) async {
-    if (_authToken == null || _userId == null) return;
+  // ---------------------------------------------------------------------------
+  // ARCHIVED DECKS
+  // ---------------------------------------------------------------------------
+
+  Future<void> fetchArchivedDecks() async {
+    if (_authToken == null) return;
 
     try {
-      final deckRes = await ApiService.createDeck(
+      final res = await ApiService.listArchivedDecks(token: _authToken!);
+      if (res.statusCode != 200) return;
+
+      final raw = jsonDecode(res.body);
+      if (raw is! List) return;
+
+      _archivedDecks
+        ..clear()
+        ..addAll(raw.map((d) => DeckItem.fromBackendJson(d)));
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("❌ fetchArchivedDecks error: $e");
+    }
+  }
+
+  Future<void> toggleArchiveDeck(DeckItem deck) async {
+    if (_authToken == null) return;
+
+    try {
+      final res = await ApiService.toggleArchiveDeck(
+        token: _authToken!,
+        deckId: deck.id,
+      );
+
+      if (res.statusCode != 200) {
+        throw Exception("Failed to toggle archive");
+      }
+
+      final data = jsonDecode(res.body);
+
+      // Find the existing deck (from active or archived)
+      final existingDeckIndex = _decks.indexWhere((d) => d.id == deck.id);
+      final existingDeck = existingDeckIndex != -1
+          ? _decks[existingDeckIndex]
+          : _archivedDecks.firstWhere((d) => d.id == deck.id);
+
+      // Create updated deck by merging existing with backend changes
+      final updatedDeck = existingDeck.copyWith(
+        isArchived: data['is_archived'] ?? existingDeck.isArchived,
+        isPublic: data['is_public'] ?? existingDeck.isPublic,
+      );
+
+      // Remove old deck from both lists
+      _decks.removeWhere((d) => d.id == updatedDeck.id);
+      _archivedDecks.removeWhere((d) => d.id == updatedDeck.id);
+
+      // Insert into correct list
+      if (updatedDeck.archived) {
+        _archivedDecks.insert(0, updatedDeck);
+      } else {
+        _decks.insert(0, updatedDeck);
+      }
+
+      // Update recents
+      final ridx = _recents.indexWhere((d) => d.id == updatedDeck.id);
+      if (ridx != -1) _recents[ridx] = updatedDeck;
+
+      _pruneRecents();
+      await _saveRecents();
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("❌ toggleArchiveDeck error: $e");
+    }
+  }
+
+
+
+  // ---------------------------------------------------------------------------
+  // RECENTS
+  // ---------------------------------------------------------------------------
+
+  Future<void> markDeckRecent(DeckItem deck) async {
+    DeckItem toStore = deck;
+    final serverIdx = _decks.indexWhere((d) => d.id == deck.id);
+    if (serverIdx != -1) toStore = _decks[serverIdx];
+
+    if (toStore.archived) return;
+
+    _recents.removeWhere((d) => d.id == toStore.id);
+    _recents.insert(0, toStore);
+
+    if (_recents.length > 20) _recents.removeLast();
+
+
+    final idx = _decks.indexWhere((d) => d.id == toStore.id);
+    if (idx != -1) {
+      _decks[idx] = toStore;
+    }
+
+    _pruneRecents();
+    await _saveRecents();
+    notifyListeners();
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // CREATE DECK
+  // ---------------------------------------------------------------------------
+
+  Future<DeckItem> createDeck(
+    DeckItem deck, {
+    String? cardOrder,
+    Map<String, dynamic>? theme,
+    bool saveAsNewTheme = false,
+    File? coverImageFile,
+  }) async {
+    if (_authToken == null || _userId == null) throw Exception("No auth");
+
+    try {
+      final res = await ApiService.createDeck(
         token: _authToken!,
         title: deck.title,
         description: deck.description,
         isPublic: deck.isPublic,
+        tags: deck.tags.whereType<String>().toList(),
+        cardOrder: cardOrder,
+        theme: deck.theme?.toJson(),
+        saveAsNewTheme: saveAsNewTheme,
+        coverImageFile: coverImageFile,
+        cards: deck.cards
+            .where((c) => c.question.isNotEmpty && c.answer.isNotEmpty)
+            .map((c) => c.toBackendJson())
+            .toList(),
       );
-      if (deckRes.statusCode != 201) throw Exception("Failed to create deck");
 
-      final deckData = jsonDecode(deckRes.body);
-      final deckId = int.tryParse(deckData['id'].toString()) ?? DateTime.now().millisecondsSinceEpoch;
-
-      // Create flashcards and assign IDs from backend
-      for (var i = 0; i < deck.cards.length; i++) {
-        final card = deck.cards[i];
-        final flashRes = await ApiService.createFlashcard(
-          token: _authToken!,
-          deckId: deckId.toString(),
-          question: card.question,
-          answer: card.answer,
-        );
-        if (flashRes.statusCode == 201) {
-          final flashData = jsonDecode(flashRes.body);
-          card.id = flashData['id'] as int?;
-          card.isNew = false;
-        }
+      if (res.statusCode != 201) {
+        final errorBody = await _streamToString(res);
+        throw Exception("Create deck failed: $errorBody");
       }
 
-      _decks.add(deck.copyWith(id: deckId, ownerId: _userId, cards: deck.cards));
+      final body = await _streamToString(res);
+      final newDeck = DeckItem.fromBackendJson(jsonDecode(body));
+
+      _decks.insert(0, newDeck);
+
+      _recents.removeWhere((d) => d.id == newDeck.id);
+      _recents.insert(0, newDeck);
+      if (_recents.length > 20) _recents.removeLast();
+      await _saveRecents();
+
       notifyListeners();
+      return newDeck;
     } catch (e) {
-      debugPrint("❌ Error creating deck: $e");
+      debugPrint("❌ createDeck error: $e");
       rethrow;
     }
   }
 
-Future<void> editDeck(DeckItem deck) async {
-  if (_authToken == null || _userId == null) return;
-  if (deck.id == 0) throw Exception("Deck ID is required");
 
-  try {
-    // PATCH deck info on backend
-    final res = await ApiService.editDeck(
+
+  Future<DeckItem> editDeck(
+    DeckItem deck, {
+    String? cardOrder,
+    File? coverImageFile,
+  }) async {
+    if (_authToken == null || _userId == null) throw Exception("No auth");
+
+    try {
+      final res = await ApiService.editDeck(
+        token: _authToken!,
+        deckId: deck.id,
+        title: deck.title,
+        description: deck.description,
+        isPublic: deck.isPublic,
+        tags: deck.tags.whereType<String>().toList(),
+        cardOrder: cardOrder,
+        coverImageFile: coverImageFile,
+        cards: deck.cards
+            .where((c) => c.question.isNotEmpty && c.answer.isNotEmpty)
+            .map((c) => c.toBackendJson())
+            .toList(),
+        theme: deck.theme?.toJson(),
+      );
+
+      if (res.statusCode != 200) {
+        final errBody = await _streamToString(res);
+        throw Exception("Edit deck failed: $errBody");
+      }
+
+      final body = await _streamToString(res);
+      final updated = DeckItem.fromBackendJson(jsonDecode(body));
+
+      final idx = _decks.indexWhere((d) => d.id == updated.id);
+      if (idx != -1) {
+        _decks[idx] = updated;
+      } else {
+        final aidx = _archivedDecks.indexWhere((d) => d.id == updated.id);
+        if (aidx != -1) _archivedDecks[aidx] = updated;
+      }
+
+      final ridx = _recents.indexWhere((d) => d.id == updated.id);
+      if (ridx != -1) {
+        _recents[ridx] = updated;
+        await _saveRecents();
+      }
+
+      if (_selectedDeck?.id == updated.id) _selectedDeck = updated;
+
+      notifyListeners();
+      return updated;
+    } catch (e) {
+      debugPrint("❌ editDeck error: $e");
+      rethrow;
+    }
+  }
+
+
+  Future<Map<String, dynamic>?> fetchDeckTheme(int deckId) async {
+    if (_authToken == null) return null;
+
+    final res = await ApiService.getDeckTheme(
       token: _authToken!,
-      deckId: deck.id.toString(),
-      title: deck.title,
-      description: deck.description,
-      isPublic: deck.isPublic,
+      deckId: deckId,
     );
 
-    if (res.statusCode != 200) throw Exception("Failed to edit deck");
+    if (res.statusCode != 200) return null;
+    return jsonDecode(res.body);
+  }
 
-    // Sync flashcards: create new ones and preserve existing ones
-    final deckIndex = _decks.indexWhere((d) => d.id == deck.id);
-    if (deckIndex == -1) return;
+  Future<bool> customizeDeckTheme(
+    int deckId, {
+    Map<String, dynamic>? themeData,
+    bool saveAsNew = false,
+    bool resetToDefault = false,
+    int? themeId,
+  }) async {
+    if (_authToken == null) return false;
 
-    final updatedCards = <Flashcard>[];
+    final res = await ApiService.customizeDeckTheme(
+      token: _authToken!,
+      deckId: deckId,
+      themeData: themeData,
+      saveAsNew: saveAsNew,
+      resetToDefault: resetToDefault,
+      themeId: themeId,
+    );
 
-    for (var card in deck.cards) {
-      // Only create new cards on backend
-      if (card.isNew) {
-        final flashRes = await ApiService.createFlashcard(
-          token: _authToken!,
-          deckId: deck.id.toString(),
-          question: card.question,
-          answer: card.answer,
-        );
-        if (flashRes.statusCode == 201) {
-          final flashData = jsonDecode(flashRes.body);
-          card.id = flashData['id'] as int?;
-          card.isNew = false;
+    return res.statusCode == 200;
+  }
+
+
+  // ---------------------------------------------------------------------------
+  // DELETE DECK
+  // ---------------------------------------------------------------------------
+
+  Future<void> deleteDeck(int deckId) async {
+    if (_authToken == null) return;
+
+    try {
+      final res = await ApiService.deleteDeck(
+        token: _authToken!,
+        deckId: deckId,
+      );
+
+      if (res.statusCode != 204) {
+        throw Exception("Delete deck failed");
+      }
+
+      _decks.removeWhere((d) => d.id == deckId);
+      _archivedDecks.removeWhere((d) => d.id == deckId);
+      _recents.removeWhere((d) => d.id == deckId);
+
+      await _saveRecents();
+
+      if (_selectedDeck?.id == deckId) _selectedDeck = null;
+
+      notifyListeners();
+    } catch (e) {
+      debugPrint("❌ deleteDeck error: $e");
+      rethrow;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // FLASHCARD OPERATIONS
+  // ---------------------------------------------------------------------------
+
+  Future<void> deleteFlashcard(String deckId, Flashcard card) async {
+    if (_authToken == null) return;
+
+    try {
+      if (!card.isNew && card.id != null) {
+        final res = await ApiService.deleteFlashcard(token: _authToken!, flashcardId: card.id!);
+
+        if (res.statusCode != 204) {
+          throw Exception("Backend failed to delete flashcard");
         }
       }
-      // Add to updated list, no duplicates
-      updatedCards.add(card);
-    }
 
-    // Replace deck cards and notify UI
-    final updatedDeck = deck.copyWith(cards: updatedCards);
-    _decks[deckIndex] = updatedDeck;
-    notifyListeners();
-  } catch (e) {
-    debugPrint("❌ Error editing deck: $e");
-    rethrow;
-  }
-}
-
-
-  void removeDeck(int id) {
-    _decks.removeWhere((d) => d.id == id);
-    notifyListeners();
-  }
-
-  void clear() {
-    _decks.clear();
-    notifyListeners();
-  }
-
-  // ---- Delete flashcard ----
-Future<void> deleteFlashcard(String deckId, Flashcard card) async {
-  if (_authToken == null) return;
-
-  try {
-    // Delete from backend if it exists remotely
-    if (!card.isNew && card.id != null) {
-      final res = await ApiService.deleteFlashcard(
-        token: _authToken!,
-        flashcardId: card.id!,
-      );
-      if (res.statusCode != 204) {
-        throw Exception('Failed to delete flashcard on backend');
+      final idx = _decks.indexWhere((d) => d.id.toString() == deckId);
+      if (idx != -1) {
+        _decks[idx].cards.removeWhere((c) => c.id == card.id);
       }
-    }
 
-    // Remove locally by ID or by content if unsynced
-    final deckIndex = _decks.indexWhere((d) => d.id.toString() == deckId);
-    if (deckIndex != -1) {
-      _decks[deckIndex].cards.removeWhere(
-        (c) => c.id == card.id || (c.isNew && c.question == card.question && c.answer == card.answer)
-      );
-      notifyListeners(); // Only once at the end
+      notifyListeners();
+
+      // refresh lists to ensure eventual consistency
+      await fetchDecks();
+    } catch (e) {
+      debugPrint("❌ deleteFlashcard error: $e");
+      rethrow;
     }
-  } catch (e) {
-    debugPrint("❌ Error deleting flashcard: $e");
-    rethrow;
   }
+  Future<String> _streamToString(http.StreamedResponse response) async {
+  return await response.stream.bytesToString();
 }
 
+void addDeck(DeckItem deck) {
+  _decks.insert(0, deck);
+  notifyListeners();
+}
 
 }

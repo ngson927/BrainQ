@@ -21,9 +21,6 @@ class QuizSession {
     this.currentQuestion,
   });
 
-  /// ✅ This factory automatically handles both:
-  /// - Full backend JSON with { "session": {...}, "question": "..." }
-  /// - Direct session JSON (no "session" key)
   factory QuizSession.fromBackendJson(Map<String, dynamic> json) {
     // Detect if wrapped or not
     final sessionJson = json.containsKey('session') ? json['session'] : json;
@@ -42,7 +39,6 @@ class QuizSession {
     );
   }
 
-  /// Optional helper if you ever want to update the current question manually
   QuizSession copyWith({
     double? accuracy,
     String? currentQuestion,

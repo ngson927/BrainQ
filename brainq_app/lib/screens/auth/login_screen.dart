@@ -3,8 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import '../../providers/auth_provider.dart';
-import '../../services/api_service.dart';
 import '../../config/theme.dart';
+import '../../providers/theme_provider.dart';
+import '../../services/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -48,6 +49,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final response = await ApiService.login(usernameOrEmail, password);
+
       if (!mounted) return;
       setState(() => loading = false);
 
@@ -56,34 +58,74 @@ class _LoginScreenState extends State<LoginScreen> {
             ? Map<String, dynamic>.from(jsonDecode(response.body))
             : {};
 
-        final token = data['token'] ?? '';
-        final userId = data['user_id']?.toString();
-        final username = data['username'] ?? '';
-        final email = data['email'] ?? '';
+        final token = data['token']?.toString() ?? '';
+        final userId = data['user_id']?.toString() ?? '';
+        final username = data['username']?.toString() ?? '';
+        final email = data['email']?.toString() ?? '';
+        final role = data['role']?.toString() ?? 'user';
+        final isSuspended = data['is_suspended'] ?? false;
+        final isActive = data['is_active'] ?? true;
 
-        if (token.isEmpty || userId == null || username.isEmpty || email.isEmpty) {
+        if (token.isEmpty || userId.isEmpty || username.isEmpty || email.isEmpty) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text("Invalid login response from server")),
           );
           return;
         }
 
-        Provider.of<AuthProvider>(context, listen: false).login(
-          username,
-          email: email, // pass backend email
+        // Block suspended/inactive users immediately
+        if (isSuspended || !isActive) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                isSuspended
+                    ? "This account has been suspended"
+                    : "This account is inactive",
+              ),
+            ),
+          );
+          return;
+        }
+
+        await Provider.of<AuthProvider>(context, listen: false).login(
+          username: username,
+          email: email,
+          firstName: data['first_name']?.toString(),
+          lastName: data['last_name']?.toString(),
           token: token,
           userId: userId,
+          role: role,
+          isSuspended: isSuspended,
+          isActive: isActive,
         );
 
+        // ignore: use_build_context_synchronously
+        Provider.of<ThemeProvider>(context, listen: false).setAuthToken(token);
 
-        context.go('/dashboard');
-      } else {
-        final error = response.body.isNotEmpty
-            ? jsonDecode(response.body)['error'] ?? 'Login failed'
-            : 'Login failed';
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(error)));
-      }
+        // Redirect based on role
+        if (mounted) {
+          if (role.toLowerCase() == 'admin') {
+            context.go('/admin/dashboard'); // Admin dashboard route
+          } else {
+            context.go('/dashboard'); // Regular user dashboard route
+          }
+        } else {
+       
+          // ignore: use_build_context_synchronously
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text("Login successful, but could not navigate")),
+          );
+        } 
+        } else {
+          final error = response.body.isNotEmpty
+              ? jsonDecode(response.body)['error']?.toString() ?? 'Login failed'
+              : 'Login failed';
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text(error)));
+          }
+        }
+
     } catch (e) {
       if (!mounted) return;
       setState(() => loading = false);
@@ -92,7 +134,6 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -122,7 +163,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
+                    color: Colors.black.withValues(alpha:0.3),
                     blurRadius: 12,
                     offset: const Offset(0, 4),
                   ),
@@ -140,37 +181,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   const SizedBox(height: 24),
-
-                  // Username or Email field
                   TextField(
                     controller: usernameController,
                     style: theme.textTheme.bodyLarge,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'Username or Email',
-                      prefixIcon: const Icon(Icons.person),
+                      prefixIcon: Icon(Icons.person),
                     ),
-                    textInputAction: TextInputAction.next, // moves focus to password field
+                    textInputAction: TextInputAction.next,
                     onSubmitted: (_) => FocusScope.of(context).nextFocus(),
                   ),
                   const SizedBox(height: 16),
-
-                  // Password field
                   TextField(
                     controller: passwordController,
                     obscureText: true,
                     style: theme.textTheme.bodyLarge,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       labelText: 'Password',
-                      prefixIcon: const Icon(Icons.lock),
+                      prefixIcon: Icon(Icons.lock),
                     ),
-                    textInputAction: TextInputAction.done, // Enter triggers login
+                    textInputAction: TextInputAction.done,
                     onSubmitted: (_) => login(),
                   ),
-
-
                   const SizedBox(height: 24),
-
-                  // Login button
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
@@ -198,10 +231,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // Links
                   TextButton(
                     onPressed: () => context.go('/forgot-password'),
                     child: Text(

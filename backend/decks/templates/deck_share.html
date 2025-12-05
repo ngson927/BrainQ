@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ deck.title }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: 'Helvetica', sans-serif; background: #f0f2f5; margin: 0; padding: 0; }
+        .container { max-width: 800px; margin: 40px auto; background: var(--deck-bg, #fff); color: var(--deck-text, #000); border-radius: 15px; padding: 30px; box-shadow: 0 6px 20px rgba(0,0,0,0.1); transition: background 0.3s, color 0.3s; }
+        h1 { margin-top: 0; font-size: 2.2em; color: inherit; }
+        .description { font-size: 1.1em; margin-bottom: 20px; }
+        .flashcard { border: 1px solid #ddd; border-radius: 12px; padding: 15px; margin-bottom: 18px; background: #fafafa; transition: transform 0.2s; }
+        .flashcard:hover { transform: scale(1.02); }
+        .flashcard strong { display: inline-block; width: 30px; }
+        .tags { margin: 20px 0; }
+        .tag { display: inline-block; background: #e0e0e0; color: #333; padding: 5px 12px; margin: 0 6px 6px 0; border-radius: 12px; font-size: 0.9em; }
+        .feedback { margin: 30px 0; }
+        .feedback h2 { margin-bottom: 15px; }
+        .feedback-item { border: 1px solid #ddd; border-radius: 12px; padding: 12px; margin-bottom: 15px; background: #fff; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        .stars { color: #ffbf00; font-size: 1.1em; vertical-align: middle; }
+        .download-app { text-align: center; margin-top: 40px; }
+        .download-app a { display: inline-block; padding: 14px 24px; background: #6c63ff; color: #fff; border-radius: 10px; text-decoration: none; font-weight: bold; font-size: 1em; transition: background 0.3s, transform 0.2s; }
+        .download-app a:hover { background: #5848c2; transform: scale(1.05); }
+        hr { border: none; border-top: 1px solid #ddd; margin: 25px 0; }
+    </style>
+</head>
+<body>
+<div class="container" style="
+    --deck-bg: {% if deck.color %}{{ deck.color }}{% else %}#fff{% endif %};
+    --deck-text: {% if deck.text_color %}{{ deck.text_color }}{% else %}#000{% endif %};
+">
+    <h1>{{ deck.title }}</h1>
+    <div class="description">{{ deck.description }}</div>
+
+    {% if tags %}
+        <div class="tags">
+            {% for tag in tags %}
+                <span class="tag">{{ tag }}</span>
+            {% endfor %}
+        </div>
+    {% endif %}
+
+    <hr>
+
+    {% if flashcards %}
+        {% for card in flashcards %}
+            <div class="flashcard">
+                <div><strong>Q:</strong> {{ card.question }}</div>
+                <div><strong>A:</strong> {{ card.answer }}</div>
+            </div>
+        {% endfor %}
+    {% else %}
+        <p>No flashcards available yet.</p>
+    {% endif %}
+
+    {% if feedbacks %}
+        <div class="feedback">
+            <h2>Feedback & Ratings</h2>
+
+            {% if avg_rating %}
+                <p>
+                    Average Rating:
+                    <span class="stars">
+                        {% for i in "12345"|slice:":5" %}
+                            {% if avg_rating >= forloop.counter %}
+                                ★
+                            {% else %}
+                                ☆
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                    ({{ avg_rating|floatformat:1 }})
+                </p>
+            {% endif %}
+
+            {% for f in feedbacks %}
+                <div class="feedback-item">
+                    <strong>
+                        {% if f.user %}
+                            {{ f.user.username }}
+                        {% else %}
+                            Anonymous
+                        {% endif %}
+                    </strong>
+                    <span class="stars">
+                        {% for i in "12345"|slice:":5" %}
+                            {% if f.rating >= forloop.counter %}
+                                ★
+                            {% else %}
+                                ☆
+                            {% endif %}
+                        {% endfor %}
+                    </span>
+                    {% if f.comment %}<p>{{ f.comment }}</p>{% endif %}
+                </div>
+            {% endfor %}
+        </div>
+        <hr>
+    {% endif %}
+
+    <div class="download-app">
+        <p>Want full interactivity? Download the BrainQ app to quiz yourself and track your progress.</p>
+        <a href="javascript:void(0);" onclick="alert('App download coming soon!')">Download App</a>
+    </div>
+</div>
+</body>
+</html>

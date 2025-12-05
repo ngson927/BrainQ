@@ -50,13 +50,16 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
 
       setState(() => loading = false);
 
+      // ✅ Guard before using context after async
+      if (!mounted) return;
+
       if (response.statusCode == 200) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(data['message'] ?? "Password reset successful!")),
         );
         context.go('/');
       } else if ((data['error'] ?? '').toLowerCase().contains('expired') ||
-                 (data['error'] ?? '').toLowerCase().contains('used')) {
+                (data['error'] ?? '').toLowerCase().contains('used')) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Your reset link has expired or already been used. Please request a new one.")),
         );
@@ -73,11 +76,15 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
       }
     } catch (e) {
       setState(() => loading = false);
+
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Network error: $e")),
       );
     }
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -107,10 +114,11 @@ class _ResetPasswordScreenState extends State<ResetPasswordScreen> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.25),
+                    color: Colors.black.withValues(alpha: 0.25),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
+
                 ],
               ),
               child: Column(

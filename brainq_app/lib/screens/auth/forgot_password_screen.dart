@@ -29,6 +29,8 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
     try {
       final response = await ApiService.requestPasswordReset(email);
       final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
+      if (!mounted) return;
       setState(() => loading = false);
 
       if (response.statusCode == 200) {
@@ -37,6 +39,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         );
 
         final token = data['token'] ?? '';
+        if (!mounted) return;
         context.go('/reset-password?token=$token');
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -44,6 +47,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
       setState(() => loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Network error: $e")),
@@ -79,7 +83,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.25),
+                    color: Colors.black.withValues(alpha: 0.25),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -122,9 +126,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                           ? const SizedBox(
                               height: 24,
                               width: 24,
-                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
                             )
-                          : const Text('Send Reset Link', style: TextStyle(fontSize: 18)),
+                          : const Text('Send Reset Link',
+                              style: TextStyle(fontSize: 18)),
                     ),
                   ),
                   const SizedBox(height: 12),

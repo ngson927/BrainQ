@@ -19,7 +19,7 @@ class Migration(migrations.Migration):
                 ('answer', models.TextField()),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
-                ('deck', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='flashcards', to='decks.deck')),
+                ('deck', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='flashcards', to='decks.Deck')),
             ],
             options={
                 'ordering': ['-updated_at'],

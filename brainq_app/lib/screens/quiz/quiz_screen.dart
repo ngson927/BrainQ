@@ -6,12 +6,13 @@ import 'package:brainq_app/services/api_service.dart';
 
 enum QuizMode { sequential, random, timed }
 
-
 class ApiQuizScreen extends StatefulWidget {
   final DeckItem deckItem;
   final String token;
   final QuizMode mode;
   final int? initialTime;
+  final bool adaptiveMode;
+  final bool srsEnabled;
 
   const ApiQuizScreen({
     super.key,
@@ -19,11 +20,14 @@ class ApiQuizScreen extends StatefulWidget {
     required this.token,
     required this.mode,
     this.initialTime,
+    this.adaptiveMode = true,
+    this.srsEnabled = true,
   });
 
   @override
   State<ApiQuizScreen> createState() => _ApiQuizScreenState();
 }
+
 
 class _ApiQuizScreenState extends State<ApiQuizScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
@@ -38,9 +42,10 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
   Timer? _timer;
   int _timeLeft = 15;
   int _selectedTime = 15;
-  bool _timerRunning = false; // ✅ track timer state
-
+  bool _timerRunning = false;
+  bool _isPaused = false;
   late AnimationController _animController;
+  DateTime _questionStartTime = DateTime.now();
 
   @override
   void initState() {
@@ -68,12 +73,57 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
   }
 
   @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (currentMode == QuizMode.timed) {
+  void didChangeAppLifecycleState(AppLifecycleState state) async {
+    if (currentMode == QuizMode.timed && sessionId != null) {
       if (state == AppLifecycleState.paused) {
         _stopTimer();
-      } else if (state == AppLifecycleState.resumed && !_timerRunning && !isAnswered) {
-        _startTimer();
+
+        try {
+          await ApiService.pauseQuiz(
+            sessionId: sessionId!,
+            token: widget.token,
+          );
+
+          setState(() {
+            _isPaused = true;
+            _timerRunning = false;
+          });
+        } catch (e) {
+          setState(() {
+            _isPaused = true;
+            _timerRunning = false;
+          });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Paused locally; server pause failed: $e")),
+            );
+          }
+        }
+      }
+
+      if (state == AppLifecycleState.resumed && !_timerRunning && !isAnswered) {
+        try {
+          await ApiService.resumeQuiz(
+            sessionId: sessionId!,
+            token: widget.token,
+          );
+          setState(() {
+            _isPaused = false;
+          });
+          _startTimer();
+        } catch (e) {
+
+          setState(() {
+            _isPaused = true;
+            _timerRunning = false;
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text("Failed to resume session: $e")),
+            );
+          }
+        }
       }
     }
   }
@@ -82,6 +132,8 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
   void _startTimer() {
     _timer?.cancel();
     if (currentMode != QuizMode.timed) return;
+
+    if (_isPaused) return;
 
     setState(() => _timerRunning = true);
 
@@ -112,19 +164,22 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
     }
   }
 
-  // ---------------- QUIZ ----------------
   Future<void> _startQuiz() async {
     setState(() => isLoading = true);
     try {
-      final backendMode = currentMode == QuizMode.timed
-          ? QuizMode.sequential.name
-          : currentMode.name;
+
+      final backendMode = currentMode.name;
 
       final data = await ApiService.startSession(
         deckId: widget.deckItem.id,
         mode: backendMode,
         token: widget.token,
+        adaptiveMode: widget.adaptiveMode,
+        srsEnabled: widget.srsEnabled,
+        timePerCard: currentMode == QuizMode.timed ? _selectedTime : null,
       );
+
+      if (!mounted) return;
 
       setState(() {
         sessionId = data['session']['id'];
@@ -133,6 +188,8 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         isAnswered = false;
         feedback = '';
         _timeLeft = _selectedTime;
+        _isPaused = false;
+        _questionStartTime = DateTime.now();
         isLoading = false;
       });
 
@@ -140,24 +197,43 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         _startTimer();
       }
     } catch (e) {
+      if (!mounted) return; 
       setState(() => isLoading = false);
+      final msg = _friendlyError(e, defaultMsg: 'Failed to start quiz');
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to start quiz: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
-  Future<void> _submitAnswer(String answer) async {
+
+  Future<void> _submitAnswer(String answer) async { 
     if (sessionId == null || isAnswered) return;
 
-    _stopTimer(); // ✅ pause timer when answering
+    if (currentMode == QuizMode.timed && _isPaused) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Session is paused. Resume to answer.")),
+      );
+      return;
+    }
+
+    _stopTimer();
     setState(() => isAnswered = true);
 
     try {
+      final responseTime = DateTime.now()
+          .difference(_questionStartTime)
+          .inSeconds
+          .toDouble();
+
       final res = await ApiService.submitAnswer(
         sessionId: sessionId!,
         answer: answer,
         token: widget.token,
+        responseTime: responseTime,
       );
+
+      if (!mounted) return;
 
       if (res['next_question'] == null) {
         _goToResults();
@@ -169,29 +245,44 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         options = List<String>.from(res['next_options'] ?? []);
         feedback = res['feedback'] ?? '';
         isAnswered = false;
-        _timeLeft = _selectedTime; // reset timer
+        _timeLeft = _selectedTime; 
+        _questionStartTime = DateTime.now(); 
+        if (currentMode == QuizMode.timed && !_isPaused) {
+          _startTimer(); 
+        }
       });
-
-      if (currentMode == QuizMode.timed) {
-        _startTimer(); // ✅ auto-resume for next question
-      }
     } catch (e) {
+      if (!mounted) return; 
       setState(() => isAnswered = false);
-      if (currentMode == QuizMode.timed) _startTimer();
+      if (currentMode == QuizMode.timed && !_isPaused) _startTimer();
+      final msg = _friendlyError(e, defaultMsg: 'Failed to submit answer');
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to submit answer: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
-  Future<void> _skipQuestion() async {
+
+
+  Future<void> _skipQuestion() async { 
+
     _stopTimer();
     if (sessionId == null) return;
+
+    if (currentMode == QuizMode.timed && _isPaused) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Session is paused. Resume to skip.")),
+      );
+      return;
+    }
 
     try {
       final res = await ApiService.skipQuestion(
         sessionId: sessionId!,
         token: widget.token,
       );
+
+      if (!mounted) return;
 
       if (res['next_question'] == null) {
         _goToResults();
@@ -203,17 +294,36 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         options = List<String>.from(res['next_options'] ?? []);
         feedback = '';
         isAnswered = false;
-        _timeLeft = _selectedTime;
+        _timeLeft = _selectedTime; 
+        _questionStartTime = DateTime.now(); 
+        if (currentMode == QuizMode.timed && !_isPaused) {
+          _startTimer(); 
+        }
       });
 
-      if (currentMode == QuizMode.timed) {
-        _startTimer();
-      }
     } catch (e) {
+      if (!mounted) return;
+
+      final msg = _friendlyError(e, defaultMsg: 'Failed to skip question');
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to skip question: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
+
+      try {
+        final data = await ApiService.getResults(
+          sessionId: sessionId!,
+          token: widget.token,
+        );
+        if (!mounted) return;
+
+        if (data.containsKey('correct_count')) {
+          _goToResults();
+          return;
+        }
+      } catch (_) {
+      }
     }
   }
+
 
   // ---------------- MODE & QUIT ----------------
   Future<void> _changeMode(QuizMode newMode) async {
@@ -221,7 +331,7 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
 
     if (newMode == QuizMode.timed) {
       final seconds = await _showTimerSettingsDialog();
-      if (seconds == null) return;
+      if (seconds == null || !mounted) return;
 
       setState(() {
         _selectedTime = seconds;
@@ -229,6 +339,7 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         isLoading = true;
       });
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('⏱ Timed mode set: $_selectedTime seconds')),
       );
@@ -244,6 +355,7 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         token: widget.token,
       );
 
+      if (!mounted) return;
       setState(() {
         currentMode = newMode;
         isLoading = true;
@@ -255,48 +367,66 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
 
       await _startQuiz();
     } catch (e) {
+      if (!mounted) return;
+      final msg = _friendlyError(e, defaultMsg: 'Failed to change mode');
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Failed to change mode: $e')));
+          .showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
+
   Future<int?> _showTimerSettingsDialog() async {
     int tempSelection = _selectedTime;
+    final options = [10, 15, 20, 30];
+
     return await showDialog<int>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Select Timer Duration"),
         content: StatefulBuilder(
-          builder: (context, setState) => Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final seconds in [10, 15, 20, 30])
-                RadioListTile<int>(
-                  title: Text("$seconds seconds"),
-                  value: seconds,
-                  groupValue: tempSelection,
-                  onChanged: (val) => setState(() => tempSelection = val!),
-                ),
-            ],
+          builder: (context, setState) => RadioGroup<int>(
+            groupValue: tempSelection,
+            onChanged: (value) {
+              setState(() => tempSelection = value!);
+            },
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: options
+                  .map(
+                    (seconds) => RadioListTile<int>(
+                      title: Text("$seconds seconds"),
+                      value: seconds,
+                    ),
+                  )
+                  .toList(),
+            ),
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, tempSelection),
-              child: const Text("Confirm")),
+            onPressed: () => Navigator.pop(ctx, tempSelection),
+            child: const Text("Confirm"),
+          ),
         ],
       ),
     );
   }
 
+
+
   Future<void> _quitQuiz() async {
+    if (!mounted) return;
+
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Quit Quiz"),
         content: const Text(
-          "Are you sure you want to quit? Your progress will be saved.",
+          "Are you sure you want to quit? Your progress will not be saved.",
         ),
         actions: [
           TextButton(
@@ -312,24 +442,27 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
       ),
     );
 
-    if (confirm == true && mounted) {
-      _stopTimer();
+    if (!mounted || confirm != true) return;
 
-      if (sessionId != null) {
-        try {
-          await ApiService.finishQuiz(
-            sessionId: sessionId!,
-            token: widget.token,
-          );
-        } catch (e) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to finish quiz session: $e')),
-          );
-        }
+    _stopTimer();
+
+    if (sessionId != null) {
+      try {
+        await ApiService.finishQuiz(
+          sessionId: sessionId!,
+          token: widget.token,
+        );
+      } catch (e) {
+        if (!mounted) return;
+        final msg = _friendlyError(e, defaultMsg: 'Failed to finish quiz session');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg)),
+        );
       }
-
-      Navigator.pop(context);
     }
+
+    if (!mounted) return;
+    Navigator.pop(context);
   }
 
   void _goToResults() async {
@@ -342,11 +475,14 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
         token: widget.token,
       );
     } catch (e) {
+      if (!mounted) return;
+      final msg = _friendlyError(e, defaultMsg: 'Failed to finish quiz session');
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to finish quiz session: $e')),
+        SnackBar(content: Text(msg)),
       );
     }
 
+    if (!mounted) return;
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
@@ -355,7 +491,6 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
       ),
     );
   }
-
   // ---------------- UI ----------------
   @override
   Widget build(BuildContext context) {
@@ -424,7 +559,9 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
                     (opt) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: ElevatedButton(
-                        onPressed: isAnswered ? null : () => _submitAnswer(opt),
+                        onPressed: (isAnswered || (currentMode == QuizMode.timed && _isPaused))
+                            ? null
+                            : () => _submitAnswer(opt),
                         style: ElevatedButton.styleFrom(
                           minimumSize: const Size.fromHeight(50),
                         ),
@@ -445,11 +582,54 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 10),
                       child: ElevatedButton.icon(
-                        onPressed: () {
+                        onPressed: () async {
+                          if (sessionId == null) return;
+
+                          Future<void> showMessage(String msg) async {
+                            if (!mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+                          }
+
                           if (_timerRunning) {
-                            _stopTimer();
+                            // PAUSE
+                            try {
+                              await ApiService.pauseQuiz(
+                                sessionId: sessionId!,
+                                token: widget.token,
+                              );
+                              _stopTimer();
+                              if (!mounted) return;
+                              setState(() {
+                                _timerRunning = false;
+                                _isPaused = true;
+                              });
+                              await showMessage("Quiz paused.");
+                            } catch (e) {
+                              final msg = _friendlyError(e, defaultMsg: 'Failed to pause session');
+                              await showMessage(msg);
+                            }
                           } else {
-                            _startTimer();
+                            // RESUME
+                            try {
+                              await ApiService.resumeQuiz(
+                                sessionId: sessionId!,
+                                token: widget.token,
+                              );
+                              if (!mounted) return;
+                              setState(() {
+                                _isPaused = false;
+                              });
+                              _startTimer();
+                              await showMessage("Quiz resumed.");
+                            } catch (e) {
+                              final msg = _friendlyError(e, defaultMsg: 'Failed to resume session');
+                              await showMessage(msg);
+                              if (!mounted) return;
+                              setState(() {
+                                _isPaused = true;
+                                _timerRunning = false;
+                              });
+                            }
                           }
                         },
                         icon: Icon(_timerRunning ? Icons.pause : Icons.play_arrow),
@@ -464,16 +644,32 @@ class _ApiQuizScreenState extends State<ApiQuizScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       ElevatedButton.icon(
-                        onPressed: isAnswered ? null : _skipQuestion,
+                        onPressed: (isAnswered || (currentMode == QuizMode.timed && _isPaused))
+                            ? null
+                            : _skipQuestion,
                         icon: const Icon(Icons.skip_next),
                         label: const Text('Skip'),
                       ),
-
                     ],
                   ),
                 ],
               ),
             ),
     );
+
+
+  }
+
+  // ----------------- Helpers -----------------
+  String _friendlyError(Object e, {required String defaultMsg}) {
+
+    final raw = e.toString();
+    if (raw.contains('status 404')) {
+      return "$defaultMsg: not found on server.";
+    }
+    if (raw.contains('status 500') || raw.toLowerCase().contains('internal')) {
+      return "$defaultMsg: server error. Try again.";
+    }
+    return "$defaultMsg: $raw";
   }
 }

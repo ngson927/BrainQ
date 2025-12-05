@@ -23,6 +23,9 @@ __pycache__/
 .venv/
 env/
 venv/
+.env
+.env.*
+*.env
 
 # Database
 db.sqlite3
@@ -32,8 +35,10 @@ db.sqlite3
 media/
 staticfiles/
 
-# Migrations (remove if you want to version control)
-migrations/
+# Migrations
+**/migrations/
+!**/migrations/__init__.py
+
 
 # Coverage / testing
 .coverage
@@ -138,3 +143,22 @@ secrets.json
 *.key
 *.crt
 *.csr
+
+# Firebase credentials
+backend/brainq/service_account.json
+brainq_app/firebase_options.dart
+google-services.json
+GoogleService-Info.plist
+
+
+*.env
+.env.local
+.env.production
+firebase-debug.log
+.DS_Store
+
+
+admin_activity.log
+# Celery beat schedule (runtime)
+backend/celerybeat-schedule.dat
+backend/celerybeat-schedule.dir

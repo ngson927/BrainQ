@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
 class AppColors {
-  static const Color primary = Color(0xFF6C63FF); // Deep purple
-  static const Color secondary = Color(0xFF03DAC6); // Teal accent
-  static const Color background = Color(0xFFF5F5F5); // Light grey
-  static const Color darkBackground = Color(0xFF121212); // Dark background
-  static const Color surfaceDark = Color(0xFF1E1E1E); // Card-like surfaces
+  static const Color primary = Color(0xFF6C63FF);
+  static const Color secondary = Color(0xFF03DAC6);
+  static const Color background = Color(0xFFF5F5F5);
+  static const Color darkBackground = Color(0xFF121212);
+  static const Color surfaceDark = Color(0xFF1E1E1E);
   static const Color textPrimary = Colors.black;
   static const Color textSecondary = Colors.grey;
 }
